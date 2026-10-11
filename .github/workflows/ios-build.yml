@@ -1,0 +1,196 @@
+name: iOS Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      native_review_only:
+        description: Run native UI review without rebuilding the device package
+        type: boolean
+        default: false
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Verify SSE framing and live delivery
+        if: ${{ !inputs.native_review_only }}
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          swiftc -parse-as-library -target "$(uname -m)-apple-macosx13.0" \
+            TidalEcho/Core/SSEEventParser.swift \
+            TidalEcho/Core/SSEClient.swift \
+            Tests/SSERegressionTests.swift \
+            -o "$RUNNER_TEMP/sse-regressions"
+          python3 Tests/run_sse_regressions.py "$RUNNER_TEMP/sse-regressions"
+
+      - name: Prepare app icons
+        working-directory: ios
+        run: bash scripts/prepare-assets.sh
+
+      - name: Verify per-message API usage
+        if: ${{ !inputs.native_review_only }}
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          swiftc -parse-as-library \
+            TidalEcho/Models/APIMessageUsage.swift \
+            Tests/APIMessageUsageTests.swift \
+            -o "$RUNNER_TEMP/api-usage-tests"
+          "$RUNNER_TEMP/api-usage-tests"
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build for iOS Simulator
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project TidalEcho.xcodeproj \
+            -scheme TidalEcho \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath DerivedData-Simulator \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Start review simulator
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; ds=[d for devices in json.load(sys.stdin)["devices"].values() for d in devices if "iPhone" in d["name"]]; preferred=[d for d in ds if d["name"] == "iPhone 17 Pro"]; print((preferred or ds)[0]["udid"])')
+          echo "REVIEW_DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE_ID" || true
+
+      - name: Capture native layout previews
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          xcrun simctl bootstatus "$REVIEW_DEVICE_ID" -b
+          xcrun simctl status_bar "$REVIEW_DEVICE_ID" override --time '11:48' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+          xcrun simctl install "$REVIEW_DEVICE_ID" 'DerivedData-Simulator/Build/Products/Debug-iphonesimulator/Tidal Echo.app'
+          mkdir -p NativePreviews
+          for theme in mist harbor; do
+            SIMCTL_CHILD_REVIEW_THEME="$theme" xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --imessage-ui-review
+            sleep 4
+            xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "NativePreviews/$theme.png"
+          done
+          xcrun simctl terminate "$REVIEW_DEVICE_ID" com.tidalecho.personal
+
+      - name: Upload native previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: TidalEcho-native-previews
+          path: ios/NativePreviews/*.png
+
+      - name: Build unsigned device app
+        if: ${{ !inputs.native_review_only }}
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project TidalEcho.xcodeproj \
+            -scheme TidalEcho \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath DerivedData-Device \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Ad-hoc sign nested code for sideloading
+        if: ${{ !inputs.native_review_only }}
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          APP_PATH="DerivedData-Device/Build/Products/Release-iphoneos/Tidal Echo.app"
+          UPLOAD_APPEX="$APP_PATH/PlugIns/Tidal Echo Screen Share.appex"
+
+          codesign --force --sign - --generate-entitlement-der "$UPLOAD_APPEX"
+          codesign --force --sign - --generate-entitlement-der "$APP_PATH"
+
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+      - name: Package unsigned IPA
+        if: ${{ !inputs.native_review_only }}
+        working-directory: ios
+        run: |
+          APP_PATH="DerivedData-Device/Build/Products/Release-iphoneos/Tidal Echo.app"
+          test -d "$APP_PATH"
+          mkdir -p Payload
+          ditto "$APP_PATH" "Payload/Tidal Echo.app"
+          ditto -c -k --sequesterRsrc --keepParent Payload TidalEcho-unsigned.ipa
+
+      - name: Upload unsigned IPA
+        if: ${{ !inputs.native_review_only }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: TidalEcho-unsigned-ipa
+          path: ios/TidalEcho-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify iMessage layout on iOS Simulator
+        timeout-minutes: 20
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project TidalEcho.xcodeproj -scheme TidalEcho \
+            -configuration Debug -destination "platform=iOS Simulator,id=$REVIEW_DEVICE_ID" \
+            -derivedDataPath DerivedData-Simulator \
+            -resultBundlePath IMessageReview.xcresult \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO test
+
+      - name: Export native screenshots
+        if: always()
+        working-directory: ios
+        run: |
+          if [ -d IMessageReview.xcresult ]; then
+            xcrun xcresulttool export attachments --path IMessageReview.xcresult --output-path IMessageScreenshots
+          fi
+
+      - name: Upload native UI review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TidalEcho-imessage-native-review
+          path: |
+            ios/IMessageReview.xcresult
+            ios/IMessageScreenshots
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload screenshots separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TidalEcho-imessage-screenshots
+          path: |
+            ios/IMessageScreenshots/*.png
+            ios/IMessageScreenshots/manifest.json
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,0 +1,104 @@
+name: TidalEcho
+
+options:
+  minimumXcodeGenVersion: 2.40.0
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 0.1.0
+    TARGETED_DEVICE_FAMILY: 1
+
+packages:
+  KaomojiDrawerKit:
+    url: https://github.com/Pyruslili/KaomojiDrawerKit.git
+    from: 1.0.0
+
+targets:
+  TidalEcho:
+    type: application
+    platform: iOS
+    dependencies:
+      - package: KaomojiDrawerKit
+      - target: TidalEchoScreenShareUpload
+    sources:
+      - path: TidalEcho
+    info:
+      path: TidalEcho/Info.plist
+      properties:
+        CFBundleDisplayName: Tidal Echo
+        LSApplicationCategoryType: public.app-category.social-networking
+        NSCameraUsageDescription: 用于在聊天中拍摄照片并作为附件发送。
+        NSCalendarsWriteOnlyAccessUsageDescription: 用于把你在 Tidal Echo 创建的日程添加到系统日历，不会读取现有日历内容。
+        NSRemindersFullAccessUsageDescription: 用于把你选择的日程添加到系统提醒事项。
+        NSFaceIDUsageDescription: 用于解锁 Tidal Echo，保护聊天与私人内容。
+        NSPhotoLibraryAddUsageDescription: 用于把聊天中打开的图片保存到系统照片。
+        NSPhotoLibraryUsageDescription: 选择图片发送到你自己的 Tidal Echo 频道。
+        NSMicrophoneUsageDescription: 用于录制语音消息和进行实时语音通话。
+        NSSpeechRecognitionUsageDescription: 用于在语音通话中把你的话实时分段转成文字。
+        UIBackgroundModes:
+          - audio
+          - fetch
+          - voip
+        UIAppFonts:
+          - AnthropicSerifVariable.ttf
+          - LXGWWenKai-Light.ttf
+          - LXGWWenKai-Regular.ttf
+          - LXGWWenKai-Medium.ttf
+          - Sacramento-Regular.ttf
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+          UISceneConfigurations: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tidalecho.personal
+        PRODUCT_NAME: Tidal Echo
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+    scheme:
+      gatherCoverageData: false
+      testTargets:
+        - TidalEchoUITests
+
+  TidalEchoUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: TidalEcho
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tidalecho.personal.uitests
+        GENERATE_INFOPLIST_FILE: YES
+
+  TidalEchoScreenShareUpload:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: TidalEchoScreenShareUpload
+    info:
+      path: TidalEchoScreenShareUpload/Info.plist
+      properties:
+        CFBundleDisplayName: Tidal Echo
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
+          NSExtensionAttributes:
+            RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tidalecho.personal.ScreenShareUpload
+        PRODUCT_NAME: Tidal Echo Screen Share
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES

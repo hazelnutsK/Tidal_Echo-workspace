@@ -1,0 +1,9 @@
+{
+  "name": "tidal-echo-wechat",
+  "private": true,
+  "type": "module",
+  "description": "WeChat (iLink ClawBot) <-> Tidal Echo relay bridge",
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}

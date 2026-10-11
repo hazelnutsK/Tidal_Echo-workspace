@@ -1,0 +1,82 @@
+# ── secrets & private state — NEVER commit ──────────────────────────────
+# Filled env files (the templates *.env.example are the only ones tracked)
+relay.env
+.env
+**/.env
+!**/.env.example
+# VAPID / TLS private keys
+*.pem
+*.key
+# 终端页(mini app)的专用 token —— 这把钥匙要写进 BotFather 的 menu button URL
+backend/.tgterm_token
+# Runtime data: the conversation DB and uploaded attachments are private
+relay.db
+relay.db-*
+uploads/
+inbox/
+last_in_id
+
+# ── build / deps ────────────────────────────────────────────────────────
+node_modules/
+bun.lock
+bun.lockb
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# ── editor / OS noise ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.bak
+*.bak-*
+.idea/
+.vscode/
+
+# local runtime state / private config (backed up via backup.ps1, not git)
+examples/api_loop.config.json
+examples/*.memory.sqlite3*
+examples/codex-bridge.pid
+examples/codex-bridge.*.log
+backend/brain_target
+backend/context_ctl.json
+backend/forge/
+examples/persona.md
+backend/ombre_buckets_cache.json
+
+# Private temporary VPS controller
+/backend/cc-on-vps.json
+
+# Private workspace: runtime data and generated artifacts stay off GitHub.
+*.log
+*.log.*
+*.db
+*.db-*
+*.sqlite*
+*.ipa
+*.zip
+*.pid
+*.out.json
+/backend/标注/
+/backend/cc-settings.json
+/backend/desire_state.json
+/backend/greetings.json
+/backend/recall_nouns.json
+/backend/thinking_stream.json
+/backend/cal_greet.txt
+/backend/err.txt
+/backend/out.txt
+/backend/pbody-system.draft.md
+/docs/cc-system-prompt/
+/docs/aquila-launch-plan.md
+/examples/_breath_check.json
+/examples/_hold_*.json
+/ios/artifacts/
+/ios/previews/
+/ios/DerivedData*/
+/ios/NativePreviews/
+/ios/IMessageScreenshots/
+/ios/*.xcresult/
+/web/dl/
+.mcp.json
+.claude/

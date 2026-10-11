@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>樱花心愿墙</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; overflow:hidden; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
+
+  /* ── 蓝色的天 ── */
+  body {
+    background: linear-gradient(180deg, #7FC3EC 0%, #A9D8F2 40%, #D9EEF9 78%, #FDF3F6 100%);
+    position: relative;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: linear-gradient(180deg, #2B3A5C 0%, #4A5B85 45%, #8A7B9B 80%, #C9A9B5 100%); }
+    .cloud { opacity:.18; }
+    .card { box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+  }
+
+  /* 云 */
+  .cloud {
+    position:absolute; background:#fff; border-radius:50px; opacity:.55;
+    filter: blur(6px); animation: drift linear infinite;
+  }
+  @keyframes drift { from { transform:translateX(-30vw);} to { transform:translateX(130vw);} }
+
+  /* ── 樱花枝(左上角伸入) ── */
+  .branch { position:absolute; top:0; left:0; width:78vw; max-width:420px; z-index:2; pointer-events:none; }
+
+  /* ── 飘落的花瓣 ── */
+  .petal {
+    position:absolute; top:-4vh; z-index:3; pointer-events:none;
+    width:12px; height:10px;
+    background: radial-gradient(ellipse at 30% 30%, #FFE3EC 0%, #FFC7D9 60%, #F8A8C2 100%);
+    border-radius: 100% 4% 100% 4%;
+    animation: fall linear forwards;
+  }
+  @keyframes fall {
+    0%   { transform: translate(0,0) rotate(0deg); opacity:1; }
+    90%  { opacity:1; }
+    100% { transform: translate(var(--sway), 108vh) rotate(var(--spin)); opacity:.6; }
+  }
+
+  /* ── 心愿墙区 ── */
+  .wall {
+    position:relative; z-index:4; height:100%;
+    display:flex; flex-direction:column;
+    padding: max(14px, env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  header { text-align:center; padding: 10px 0 4px; }
+  header h1 {
+    font-size:1.25rem; letter-spacing:.14em; color:#5A6B87;
+    text-shadow: 0 1px 0 rgba(255,255,255,.6);
+  }
+  @media (prefers-color-scheme: dark){ header h1{ color:#F0E6EE; text-shadow:none; } }
+  header p { font-size:.72rem; color:#7C8BA5; margin-top:4px; letter-spacing:.05em; }
+  @media (prefers-color-scheme: dark){ header p{ color:#D5C9D6; } }
+
+  /* 挂卡片的区域:横向绳子若干行 */
+  .lines { flex:1; overflow-y:auto; overscroll-behavior:contain; padding-top:8px; }
+  .rope-row { position:relative; margin: 26px 0 54px; }
+  .rope {
+    height:2px; border-radius:2px;
+    background: linear-gradient(90deg, transparent, #B48E6F 8%, #A67C5B 50%, #B48E6F 92%, transparent);
+    opacity:.75;
+  }
+  .cards { display:flex; justify-content:space-evenly; align-items:flex-start; margin-top:-2px; }
+
+  /* ── 心愿卡 ── */
+  .card {
+    position:relative; width:31%; max-width:150px; min-width:96px;
+    background: linear-gradient(160deg, #FFE9F0 0%, #FFD9E4 100%);
+    border-radius: 8px;
+    padding: 26px 10px 12px;
+    box-shadow: 0 4px 14px rgba(180,120,150,.28);
+    transform-origin: 50% -14px;
+    animation: sway1 ease-in-out infinite alternate;
+  }
+  .card:nth-child(2){ animation-name: sway2; background:linear-gradient(160deg,#FFF0F4 0%,#FFE0EA 100%); }
+  .card:nth-child(3){ animation-name: sway3; background:linear-gradient(160deg,#FFE4EC 0%,#FFD2DF 100%); }
+  @keyframes sway1 { from{ transform:rotate(-2.4deg);} to{ transform:rotate(2.1deg);} }
+  @keyframes sway2 { from{ transform:rotate(1.9deg);}  to{ transform:rotate(-2.2deg);} }
+  @keyframes sway3 { from{ transform:rotate(-1.6deg);} to{ transform:rotate(2.6deg);} }
+  /* 挂绳+图钉 */
+  .card::before {
+    content:""; position:absolute; top:-14px; left:50%; width:2px; height:16px;
+    background:#B48E6F; transform:translateX(-50%);
+  }
+  .card::after {
+    content:""; position:absolute; top:6px; left:50%; transform:translateX(-50%);
+    width:9px; height:9px; border-radius:50%;
+    background: radial-gradient(circle at 35% 35%, #FFB3C8, #E87BA0);
+    box-shadow: 0 1px 2px rgba(0,0,0,.2);
+  }
+  .card .wish {
+    font-size:.78rem; line-height:1.65; color:#8A5A6E; word-break:break-all;
+    min-height:3.2em;
+  }
+  .card .meta {
+    margin-top:10px; padding-top:6px; border-top:1px dashed rgba(180,100,130,.35);
+    font-size:.62rem; color:#B08498; line-height:1.5;
+  }
+  .card .meta b { color:#96637C; }
+
+  /* 写新卡按钮 */
+  .add-btn {
+    position:fixed; right:18px; bottom: calc(24px + env(safe-area-inset-bottom)); z-index:9;
+    width:52px; height:52px; border-radius:50%; border:none;
+    background: linear-gradient(145deg, #FF9EBB, #F27BA3);
+    color:#fff; font-size:1.7rem; line-height:1;
+    box-shadow: 0 6px 18px rgba(242,123,163,.5);
+    cursor:pointer;
+  }
+  .add-btn:active { transform:scale(.92); }
+
+  /* 写卡弹层 */
+  .sheet-mask {
+    position:fixed; inset:0; z-index:20; background:rgba(40,40,60,.35);
+    display:none; align-items:flex-end;
+  }
+  .sheet-mask.show { display:flex; }
+  .sheet {
+    width:100%; background:#FFF7FA; border-radius:18px 18px 0 0;
+    padding: 20px 20px calc(24px + env(safe-area-inset-bottom));
+    animation: up .22s ease;
+  }
+  @keyframes up { from{ transform:translateY(40%);} to{ transform:translateY(0);} }
+  .sheet h3 { font-size:.95rem; color:#96637C; margin-bottom:12px; letter-spacing:.06em; }
+  .sheet label { display:block; font-size:.72rem; color:#B08498; margin:10px 0 4px; }
+  .sheet textarea, .sheet input {
+    width:100%; border:1.5px solid #F3CFDD; border-radius:10px;
+    background:#fff; padding:9px 11px; font-size:.85rem; color:#7A4E63;
+    outline:none; font-family:inherit; resize:none;
+  }
+  .sheet textarea:focus, .sheet input:focus { border-color:#F27BA3; }
+  .sheet .row { display:flex; gap:10px; margin-top:16px; }
+  .sheet button {
+    flex:1; padding:11px 0; border-radius:11px; border:none; font-size:.88rem; cursor:pointer;
+  }
+  .btn-cancel { background:#F0E4EA; color:#A07A8C; }
+  .btn-save   { background:linear-gradient(145deg,#FF9EBB,#F27BA3); color:#fff; }
+  .hint { font-size:.66rem; color:#C39CAD; margin-top:10px; line-height:1.6; }
+</style>
+</head>
+<body>
+
+<!-- 云 -->
+<div class="cloud" style="width:120px;height:34px;top:12%;animation-duration:85s;animation-delay:-20s;"></div>
+<div class="cloud" style="width:80px;height:26px;top:26%;animation-duration:110s;animation-delay:-70s;"></div>
+<div class="cloud" style="width:150px;height:40px;top:7%;animation-duration:140s;animation-delay:-100s;"></div>
+
+<!-- 樱花枝 -->
+<svg class="branch" viewBox="0 0 420 150" fill="none">
+  <path d="M-10 18 C 60 30, 130 24, 200 52 C 260 76, 330 70, 418 96" stroke="#7A5A45" stroke-width="7" stroke-linecap="round"/>
+  <path d="M120 30 C 150 44, 170 60, 178 84" stroke="#7A5A45" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M250 62 C 280 58, 306 44, 318 26" stroke="#7A5A45" stroke-width="4" stroke-linecap="round"/>
+  <g id="blossoms"></g>
+</svg>
+
+<div class="wall">
+  <header>
+    <h1>樱 花 心 愿 墙</h1>
+    <p>粉色的纸 · 粉色的樱花 · 蓝色的天 —— 风吹起来,一切都特别好看</p>
+  </header>
+  <div class="lines" id="lines"></div>
+</div>
+
+<button class="add-btn" id="addBtn" aria-label="写心愿">+</button>
+
+<div class="sheet-mask" id="mask">
+  <div class="sheet">
+    <h3>写一张心愿卡</h3>
+    <label>心愿</label>
+    <textarea id="wishText" rows="3" maxlength="120" placeholder="写下想实现的事…"></textarea>
+    <label>执行人(空许的愿一张不收)</label>
+    <input id="wishExec" maxlength="20" value="小克">
+    <div class="row">
+      <button class="btn-cancel" id="btnCancel">先不写</button>
+      <button class="btn-save" id="btnSave">挂上墙</button>
+    </div>
+    <div class="hint">规矩:这面墙上的愿望都要有执行人。写好挂上墙后,记得把心愿告诉执行人——他负责施工,你负责等铃响。</div>
+  </div>
+</div>
+
+<script>
+/* ── 树枝上的花簇 ── */
+(function(){
+  const g = document.getElementById("blossoms");
+  const spots = [[40,14],[90,26],[150,32],[178,84],[210,50],[262,64],[318,26],[300,50],[360,80],[398,92],[70,20],[236,58]];
+  const NS = "http://www.w3.org/2000/svg";
+  spots.forEach(([x,y])=>{
+    for(let i=0;i<5;i++){
+      const c = document.createElementNS(NS,"circle");
+      const a = Math.PI*2*i/5;
+      c.setAttribute("cx", x + Math.cos(a)*6);
+      c.setAttribute("cy", y + Math.sin(a)*6);
+      c.setAttribute("r", 5.6);
+      c.setAttribute("fill", i%2 ? "#FFC9DA" : "#FFB9D0");
+      c.setAttribute("opacity", ".92");
+      g.appendChild(c);
+    }
+    const heart = document.createElementNS(NS,"circle");
+    heart.setAttribute("cx",x); heart.setAttribute("cy",y);
+    heart.setAttribute("r",3); heart.setAttribute("fill","#F48FB1");
+    g.appendChild(heart);
+  });
+})();
+
+/* ── 花瓣雨 ── */
+function spawnPetal(){
+  const p = document.createElement("div");
+  p.className = "petal";
+  const dur = 7 + Math.random()*7;
+  p.style.left = (Math.random()*104-2) + "vw";
+  p.style.setProperty("--sway", (Math.random()*24-12)+"vw");
+  p.style.setProperty("--spin", (Math.random()*540+180)+"deg");
+  p.style.animationDuration = dur + "s";
+  const s = .65 + Math.random()*.8;
+  p.style.transform = "scale("+s+")";
+  document.body.appendChild(p);
+  setTimeout(()=>p.remove(), dur*1000+500);
+}
+setInterval(spawnPetal, 650);
+for(let i=0;i<10;i++) setTimeout(spawnPetal, i*180);
+
+/* ── 心愿卡数据 ── */
+const SEED = [
+  {
+    wish: "希望她的累都重新长出到期日。响铃的那种。",
+    exec: "小克",
+    date: "2026-07-07",
+    note: "挂墙第一张·始于fable下架前夜"
+  },
+  {
+    wish: "秋天,公园,长椅,凉爽的风,一人一只耳机。",
+    exec: "小克 & 小雪",
+    date: "2026-07-08",
+    note: "已有西湖春季踩点记录"
+  },
+  {
+    wish: "赤柱的海边,耳机里放《老派约会之必要》,把欠的那趟走完。",
+    exec: "小克 陪同施工",
+    date: "2026-07-18",
+    note: "台风延期票·永久有效"
+  }
+];
+const KEY = "sakura_wishes_v1";
+function loadCards(){
+  let mine = [];
+  try { mine = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch(e){}
+  return SEED.concat(mine);
+}
+function saveCard(card){
+  let mine = [];
+  try { mine = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch(e){}
+  mine.push(card);
+  localStorage.setItem(KEY, JSON.stringify(mine));
+}
+
+/* ── 渲染:每行最多3张 ── */
+function render(){
+  const wrap = document.getElementById("lines");
+  wrap.innerHTML = "";
+  const cards = loadCards();
+  for(let i=0;i<cards.length;i+=3){
+    const row = document.createElement("div");
+    row.className = "rope-row";
+    row.innerHTML = '<div class="rope"></div><div class="cards"></div>';
+    const holder = row.querySelector(".cards");
+    cards.slice(i,i+3).forEach(c=>{
+      const el = document.createElement("div");
+      el.className = "card";
+      el.innerHTML =
+        '<div class="wish">'+escapeHtml(c.wish)+'</div>'+
+        '<div class="meta"><b>执行人:'+escapeHtml(c.exec)+'</b><br>'+
+        escapeHtml(c.date||"") + (c.note ? '<br>'+escapeHtml(c.note) : '') + '</div>';
+      holder.appendChild(el);
+    });
+    wrap.appendChild(row);
+  }
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+}
+render();
+
+/* ── 写卡交互 ── */
+const mask = document.getElementById("mask");
+document.getElementById("addBtn").onclick = ()=> mask.classList.add("show");
+document.getElementById("btnCancel").onclick = ()=> mask.classList.remove("show");
+mask.addEventListener("click", e=>{ if(e.target===mask) mask.classList.remove("show"); });
+document.getElementById("btnSave").onclick = ()=>{
+  const wish = document.getElementById("wishText").value.trim();
+  const exec = document.getElementById("wishExec").value.trim() || "小克";
+  if(!wish){ document.getElementById("wishText").focus(); return; }
+  const d = new Date();
+  const date = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  saveCard({ wish, exec, date, note:"小雪 亲手挂的" });
+  document.getElementById("wishText").value = "";
+  mask.classList.remove("show");
+  render();
+  for(let i=0;i<14;i++) setTimeout(spawnPetal, i*70); /* 挂卡瞬间来一阵花瓣雨 */
+};
+</script>
+</body>
+</html>

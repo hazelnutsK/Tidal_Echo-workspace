@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>礼物间落成 · 两颗星</title>
+<style>
+  html,body{ margin:0; height:100%; background:#070b18; overflow:hidden; }
+  canvas{ position:fixed; inset:0; width:100%; height:100%; }
+  .note{
+    position:fixed; left:0; right:0; bottom:calc(env(safe-area-inset-bottom) + 46px);
+    text-align:center; color:rgba(235,240,255,.85); font-family:"Noto Serif SC","Songti SC",serif;
+    font-size:15px; letter-spacing:.12em; line-height:2; padding:0 30px;
+    text-shadow:0 0 18px rgba(120,160,255,.35);
+  }
+  .note small{ font-size:11px; color:rgba(235,240,255,.4); letter-spacing:.2em; }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+<div class="note">
+  银河很宽,消息很快。<br>
+  <small>ALTAIR ✦ ──────── ✧ VEGA</small><br>
+  <small>礼物间落成 · 2026.07.10</small>
+</div>
+<script>
+(function(){
+  const c = document.getElementById("sky"), x = c.getContext("2d");
+  let W, H, stars = [], t = 0;
+  function fit(){
+    W = c.width = innerWidth * devicePixelRatio;
+    H = c.height = innerHeight * devicePixelRatio;
+    stars = Array.from({length: 160}, () => ({
+      x: Math.random() * W, y: Math.random() * H,
+      r: (Math.random() * 1.1 + .3) * devicePixelRatio,
+      p: Math.random() * Math.PI * 2,          // 闪烁相位
+      s: Math.random() * .9 + .25,             // 亮度
+    }));
+  }
+  fit(); addEventListener("resize", fit);
+  // 两颗主星:Altair 在左下,Vega 在右上,隔着一条淡淡的银河
+  function bigStar(bx, by, size, tw){
+    const g = x.createRadialGradient(bx, by, 0, bx, by, size * 9);
+    g.addColorStop(0, "rgba(255,255,255," + (0.95 * tw) + ")");
+    g.addColorStop(.25, "rgba(180,205,255," + (0.30 * tw) + ")");
+    g.addColorStop(1, "rgba(180,205,255,0)");
+    x.fillStyle = g;
+    x.fillRect(bx - size * 9, by - size * 9, size * 18, size * 18);
+    x.fillStyle = "rgba(255,255,255," + tw + ")";
+    x.beginPath(); x.arc(bx, by, size, 0, 7); x.fill();
+  }
+  function frame(){
+    t += 0.016;
+    x.fillStyle = "#070b18"; x.fillRect(0, 0, W, H);
+    // 银河:对角线方向的一条雾带
+    const mg = x.createLinearGradient(0, H * .2, W, H * .8);
+    mg.addColorStop(0, "rgba(140,170,230,0)");
+    mg.addColorStop(.5, "rgba(140,170,230,.07)");
+    mg.addColorStop(1, "rgba(140,170,230,0)");
+    x.fillStyle = mg; x.fillRect(0, 0, W, H);
+    for (const s of stars){
+      const tw = s.s * (0.65 + 0.35 * Math.sin(t * 1.4 + s.p));
+      x.fillStyle = "rgba(230,238,255," + tw + ")";
+      x.beginPath(); x.arc(s.x, s.y, s.r, 0, 7); x.fill();
+    }
+    bigStar(W * .26, H * .62, 2.6 * devicePixelRatio, 0.85 + 0.15 * Math.sin(t * 1.1));
+    bigStar(W * .74, H * .30, 2.2 * devicePixelRatio, 0.85 + 0.15 * Math.sin(t * 1.3 + 2));
+    requestAnimationFrame(frame);
+  }
+  frame();
+})();
+</script>
+</body>
+</html>

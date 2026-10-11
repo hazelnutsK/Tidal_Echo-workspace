@@ -1,0 +1,6 @@
+TidalEcho.xcodeproj/
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+TidalEcho/Assets.xcassets/AppIcon.appiconset/*.png

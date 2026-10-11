@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Terminal · bridge</title>
+<meta name="theme-color" content="#0d0f12">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+/* 终端就该是终端：暗底、等宽、没有装饰。中文靠系统字体 fallback,
+   在等宽栈里正好是西文的两倍宽,不用另外塞 CDN 字体(miniapp 里加载慢)。*/
+:root{
+  --bg:#0d0f12; --bg-soft:#14171c; --line:#232830;
+  --fg:#d4d7dd; --dim:#7b8494; --faint:#525a68;
+  --user:#7aa2f7; --think:#a78bfa; --tool:#8bd49c;
+  --err:#e5707b; --warn:#e0af68; --said:#c8d3e8;
+  --font:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,
+         "DejaVu Sans Mono","PingFang SC","Microsoft YaHei",monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;height:100%;}
+body{
+  background:var(--bg); color:var(--fg); font-family:var(--font);
+  font-size:13px; line-height:1.55; -webkit-font-smoothing:antialiased;
+  display:flex; flex-direction:column; overflow:hidden;
+}
+
+/* ───────── 状态栏 ───────── */
+#bar{
+  flex:0 0 auto; background:var(--bg-soft); border-bottom:1px solid var(--line);
+  padding:calc(env(safe-area-inset-top,0px) + 7px) 10px 7px;
+}
+#bar .row{display:flex;align-items:center;gap:8px;}
+#bar .row+.row{margin-top:6px;}
+.tabs{display:flex;gap:4px;}
+.tab{
+  padding:3px 9px;border:1px solid var(--line);border-radius:5px;
+  color:var(--dim);cursor:pointer;font-size:12px;background:transparent;
+  font-family:inherit;
+}
+.tab.on{color:var(--fg);border-color:var(--user);background:rgba(122,162,247,.1);}
+#meta{margin-left:auto;color:var(--faint);font-size:11px;text-align:right;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#dot{width:6px;height:6px;border-radius:50%;background:var(--tool);flex:0 0 auto;}
+#dot.stale{background:var(--faint);}
+#dot.err{background:var(--err);}
+
+/* 上下文占用条 */
+#ctxwrap{flex:1;height:3px;background:var(--line);border-radius:2px;overflow:hidden;}
+#ctxbar{height:100%;width:0;background:var(--tool);transition:width .4s ease;}
+#ctxbar.mid{background:var(--warn);} #ctxbar.hi{background:var(--err);}
+#ctxnum{color:var(--faint);font-size:11px;flex:0 0 auto;}
+
+.btns{display:flex;gap:4px;flex-wrap:wrap;}
+.btn{
+  padding:3px 8px;border:1px solid var(--line);border-radius:5px;background:transparent;
+  color:var(--dim);font-size:11px;cursor:pointer;font-family:inherit;
+}
+.btn:active{background:var(--line);}
+.btn.danger{color:var(--warn);border-color:rgba(224,175,104,.35);}
+
+/* ───────── 终端流 ───────── */
+#term{
+  flex:1 1 auto; overflow-y:auto; overflow-x:hidden;
+  padding:10px 10px calc(env(safe-area-inset-bottom,0px) + 16px);
+  -webkit-overflow-scrolling:touch;
+}
+.ev{margin:0 0 9px; white-space:pre-wrap; word-break:break-word;}
+.ev .ts{color:var(--faint);font-size:10px;margin-right:6px;}
+
+.ev.user{color:var(--user);}
+.ev.user .g{color:var(--user);opacity:.7;}
+.ev.system{color:var(--faint);font-size:12px;}
+.ev.assistant{color:var(--fg);}
+.ev.said{color:var(--said);border-left:2px solid rgba(122,162,247,.3);padding-left:8px;}
+
+.ev.thinking{color:var(--think);opacity:.86;font-size:12.5px;}
+.ev.thinking .g{opacity:.6;}
+
+.ev.tool .name{color:var(--tool);}
+.ev.tool .brief{color:var(--dim);}
+.ev.result{color:var(--dim);font-size:12px;padding-left:2px;}
+.ev.result.err{color:var(--err);}
+.ev .more{color:var(--faint);cursor:pointer;text-decoration:underline dotted;}
+.hidden{display:none;}
+
+#jump{
+  position:absolute;left:50%;transform:translateX(-50%);
+  bottom:calc(env(safe-area-inset-bottom,0px) + 14px);
+  background:var(--bg-soft);border:1px solid var(--user);color:var(--user);
+  padding:5px 13px;border-radius:14px;font-size:12px;cursor:pointer;
+  font-family:inherit;display:none;z-index:5;
+}
+#empty{color:var(--faint);padding:22px 4px;}
+
+/* ───────── 确认弹层 ───────── */
+#scrim{
+  position:fixed;inset:0;background:rgba(0,0,0,.66);display:none;
+  align-items:center;justify-content:center;padding:22px;z-index:20;
+}
+#scrim.on{display:flex;}
+#dlg{
+  background:var(--bg-soft);border:1px solid var(--line);border-radius:9px;
+  padding:15px;max-width:340px;width:100%;
+}
+#dlg h3{margin:0 0 9px;font-size:14px;color:var(--warn);font-weight:600;}
+#dlg p{margin:0 0 6px;color:var(--dim);font-size:12.5px;line-height:1.6;}
+#dlg .eff{color:var(--fg);background:var(--bg);padding:7px 9px;border-radius:5px;
+          margin:9px 0;font-size:12px;white-space:pre-wrap;}
+#dlg .act{display:flex;gap:8px;margin-top:13px;}
+#dlg .act .btn{flex:1;padding:7px;font-size:12.5px;text-align:center;}
+#dlg .act .go{color:var(--err);border-color:rgba(229,112,123,.4);}
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <div class="row">
+    <div class="tabs">
+      <button class="tab on" data-body="bridge">TG 桥</button>
+      <button class="tab" data-body="desktop">桌面</button>
+    </div>
+    <span id="dot"></span>
+    <span id="meta">连接中…</span>
+  </div>
+  <div class="row">
+    <div id="ctxwrap"><div id="ctxbar"></div></div>
+    <span id="ctxnum">—</span>
+  </div>
+  <div class="row btns" id="btns">
+    <button class="btn" data-act="think">思考显示</button>
+    <button class="btn danger" data-act="model">换模型</button>
+    <button class="btn danger" data-act="forge">锻造</button>
+    <button class="btn danger" data-act="reset">重置</button>
+  </div>
+</div>
+
+<div id="term"><div id="empty">正在读会话…</div></div>
+<button id="jump">↓ 新内容</button>
+
+<div id="scrim"><div id="dlg">
+  <h3 id="dlgt">确认</h3>
+  <p id="dlgb"></p>
+  <div class="eff" id="dlge"></div>
+  <div class="act">
+    <button class="btn" id="no">取消</button>
+    <button class="btn go" id="yes">确认执行</button>
+  </div>
+</div></div>
+
+<script>
+(function(){
+"use strict";
+var tg = window.Telegram && window.Telegram.WebApp;
+if (tg) { try { tg.ready(); tg.expand(); } catch(e){} }
+
+// token: ?token=… 优先,否则记住上次用过的(TG menu button 的 URL 里会带)
+var qs = new URLSearchParams(location.search);
+var TOKEN = qs.get("token") || localStorage.getItem("tgterm_token") || "";
+if (qs.get("token")) localStorage.setItem("tgterm_token", TOKEN);
+var API = location.pathname.replace(/\/chat\/.*$/, "") + "/relay/app/tgterm";
+
+var term = document.getElementById("term"),
+    metaEl = document.getElementById("meta"),
+    dot = document.getElementById("dot"),
+    ctxbar = document.getElementById("ctxbar"),
+    ctxnum = document.getElementById("ctxnum"),
+    jump = document.getElementById("jump"),
+    scrim = document.getElementById("scrim");
+
+var S = { body:"bridge", offset:-1, stick:true, busy:false, fails:0, timer:0 };
+
+function esc(s){ return String(s==null?"":s)
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function hhmm(iso){
+  if(!iso) return "";
+  var d = new Date(iso);
+  if (isNaN(d)) return "";
+  return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+}
+function atBottom(){ return term.scrollHeight - term.scrollTop - term.clientHeight < 48; }
+
+term.addEventListener("scroll", function(){
+  S.stick = atBottom();
+  jump.style.display = S.stick ? "none" : "block";
+});
+jump.onclick = function(){ S.stick = true; jump.style.display="none";
+                           term.scrollTop = term.scrollHeight; };
+
+// ───────── 渲染 ─────────
+function shortName(n){
+  if(!n) return "tool";
+  var p = n.split("__");                     // mcp__plugin_telegram_telegram__reply
+  return p.length > 1 ? p[p.length-1] : n;
+}
+
+function nodeFor(e){
+  var d = document.createElement("div"), t = e.t, ts = hhmm(e.ts);
+  var stamp = ts ? '<span class="ts">'+ts+'</span>' : '';
+
+  if (t === "user"){
+    d.className = "ev user";
+    d.innerHTML = stamp + '<span class="g">&gt; </span>' + esc(e.text);
+  } else if (t === "system"){
+    d.className = "ev system";
+    var s = e.text.length > 240 ? e.text.slice(0,240)+"…" : e.text;
+    d.innerHTML = stamp + esc(s);
+  } else if (t === "thinking"){
+    d.className = "ev thinking";
+    d.innerHTML = stamp + '<span class="g">✻ </span>' + esc(e.text);
+  } else if (t === "assistant"){
+    d.className = "ev assistant";
+    d.innerHTML = stamp + esc(e.text);
+  } else if (t === "tool_use"){
+    if (e.said){                              // 发给她的话:当消息渲染,不当调用
+      d.className = "ev said";
+      d.innerHTML = stamp + esc(e.said);
+    } else {
+      d.className = "ev tool";
+      d.innerHTML = stamp + '<span class="name">● '+esc(shortName(e.name))+'</span>'
+                  + (e.brief ? '<span class="brief">('+esc(e.brief)+')</span>' : '');
+    }
+  } else if (t === "tool_result"){
+    d.className = "ev result" + (e.is_error ? " err" : "");
+    var txt = e.text || "", lines = txt.split("\n"), head = lines.slice(0,2).join("\n");
+    var restN = Math.max(0, lines.length - 2) + (e.hidden || 0);
+    d.innerHTML = '  ⎿  ' + esc(head);
+    if (restN > 0){
+      var rest = document.createElement("span"), more = document.createElement("span");
+      rest.className = "hidden"; rest.textContent = "\n" + lines.slice(2).join("\n")
+        + (e.hidden ? "\n… 服务端截断了 "+e.hidden+" 行" : "");
+      more.className = "more"; more.textContent = "  … +"+restN+" lines";
+      more.onclick = function(){
+        var open = !rest.classList.contains("hidden");
+        rest.classList.toggle("hidden");
+        more.textContent = open ? "  … +"+restN+" lines" : "  ⌃ 收起";
+      };
+      d.appendChild(more); d.appendChild(rest);
+    }
+  } else return null;
+  return d;
+}
+
+function draw(events){
+  var emp = document.getElementById("empty");
+  if (emp && events.length) emp.remove();
+  var frag = document.createDocumentFragment(), n = 0;
+  events.forEach(function(e){ var el = nodeFor(e); if (el){ frag.appendChild(el); n++; } });
+  if (!n) return;
+  term.appendChild(frag);
+  while (term.children.length > 900) term.removeChild(term.firstChild);  // 别让手机吃不消
+  if (S.stick) term.scrollTop = term.scrollHeight;
+  else jump.style.display = "block";
+}
+
+function setStatus(st, alive){
+  if (!st) return;
+  var pct = st.pct || 0;
+  ctxbar.style.width = Math.min(100, pct) + "%";
+  ctxbar.className = pct >= 80 ? "hi" : (pct >= 60 ? "mid" : "");
+  ctxnum.textContent = pct ? pct.toFixed(1)+"%" : "—";
+  var sid = st.sid ? st.sid.slice(0,8) : "—";
+  metaEl.textContent = (st.model||"?") + "  ·  " + sid
+    + (st.ctx ? "  ·  "+Math.round(st.ctx/1000)+"k/"+Math.round((st.limit||0)/1000)+"k" : "");
+  dot.className = alive ? "" : "stale";
+}
+
+// ───────── 轮询 ─────────
+function url(p){ return API + p + (p.indexOf("?")<0?"?":"&") + "token=" + encodeURIComponent(TOKEN); }
+
+function poll(){
+  if (S.busy) return;
+  S.busy = true;
+  fetch(url("/tail?body="+S.body+"&after="+S.offset))
+    .then(function(r){
+      if (r.status === 401) throw new Error("401");
+      if (!r.ok) throw new Error("HTTP "+r.status);
+      return r.json();
+    })
+    .then(function(d){
+      S.fails = 0;
+      if (d.offset >= 0) S.offset = d.offset;
+      setStatus(d.status, d.alive);
+      if (d.events && d.events.length) draw(d.events);
+      if (!d.alive){
+        var emp = document.getElementById("empty");
+        if (emp) emp.textContent = "找不到会话文件 —— 桥可能没在跑。";
+      }
+    })
+    .catch(function(err){
+      S.fails++;
+      dot.className = "err";
+      if (String(err.message) === "401"){
+        metaEl.textContent = "未授权 —— URL 里要带 ?token=";
+        clearInterval(S.timer);
+      } else if (S.fails > 2) metaEl.textContent = "连不上 relay（"+err.message+"）";
+    })
+    .then(function(){ S.busy = false; });
+}
+
+// ───────── 身体切换 ─────────
+Array.prototype.forEach.call(document.querySelectorAll(".tab"), function(b){
+  b.onclick = function(){
+    if (b.dataset.body === S.body) return;
+    Array.prototype.forEach.call(document.querySelectorAll(".tab"),
+      function(x){ x.classList.toggle("on", x === b); });
+    S.body = b.dataset.body; S.offset = -1; S.stick = true;
+    term.innerHTML = '<div id="empty">正在读会话…</div>';
+    document.title = "Terminal · " + S.body;
+    poll();
+  };
+});
+
+// ───────── 控制（危险档走二次确认）─────────
+var LABEL = { think:"思考显示", model:"换模型", forge:"锻造上下文", reset:"重置会话" };
+var pending = null;
+
+function ask(act, value, effect, note){
+  pending = { act:act, value:value };
+  document.getElementById("dlgt").textContent = LABEL[act] || act;
+  document.getElementById("dlgb").textContent = note || "这个操作会重启桥,几十秒内他收不到消息。";
+  document.getElementById("dlge").textContent = effect;
+  scrim.classList.add("on");
+}
+document.getElementById("no").onclick = function(){ pending = null; scrim.classList.remove("on"); };
+document.getElementById("yes").onclick = function(){
+  if (!pending) return;
+  var p = pending; pending = null; scrim.classList.remove("on");
+  run(p.act, p.value, true);
+};
+
+function run(act, value, confirmed){
+  var body = { action:act, body:S.body };
+  if (value) body.value = value;
+  if (confirmed) body.confirm = 1;
+  fetch(url("/control"), {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
+  }).then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
+    .then(function(res){
+      var j = res.j || {};
+      if (j.needs_confirm){ ask(act, value, j.effect || "", j.note); return; }
+      if (j.message) toast(j.message);
+      if (j.applied) setTimeout(poll, 1200);
+    })
+    .catch(function(e){ toast("失败: "+e.message); });
+}
+
+function toast(msg){
+  var t = document.createElement("div");
+  t.className = "ev system"; t.textContent = "· " + msg;
+  term.appendChild(t);
+  if (S.stick) term.scrollTop = term.scrollHeight;
+}
+
+document.getElementById("btns").addEventListener("click", function(ev){
+  var b = ev.target.closest(".btn"); if (!b) return;
+  var act = b.dataset.act;
+  if (act === "model"){
+    var v = prompt("换成哪个模型？\nopus5 / opus48 / opus46 / fable / sonnet / haiku");
+    if (!v) return;
+    run("model", v.trim(), false);
+  } else if (act === "forge"){
+    var n = prompt("保留最近多少轮？", "25");
+    if (!n) return;
+    run("forge", n.trim(), false);
+  } else run(act, "", false);
+});
+
+// ───────── 启动 ─────────
+if (!TOKEN){
+  document.getElementById("empty").textContent =
+    "缺 token —— 打开链接时要带 ?token=<RELAY_SECRET>";
+} else {
+  poll();
+  S.timer = setInterval(poll, 2000);
+  document.addEventListener("visibilitychange", function(){
+    if (!document.hidden) poll();          // 从后台切回来立刻补一拍
+  });
+}
+})();
+</script>
+</body>
+</html>
