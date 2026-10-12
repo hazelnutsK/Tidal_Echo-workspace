@@ -54,6 +54,7 @@ final class AppModel: ObservableObject {
     @Published var chatFont: EchoChatFont {
         didSet { UserDefaults.standard.set(chatFont.rawValue, forKey: Keys.chatFont) }
     }
+    @Published private(set) var importedChatFonts: [ImportedChatFont]
     @Published var fontScale: Double {
         didSet { UserDefaults.standard.set(fontScale, forKey: Keys.fontScale) }
     }
@@ -268,7 +269,15 @@ final class AppModel: ObservableObject {
         chatLayoutStyle = ChatLayoutStyle(rawValue: defaults.string(forKey: Keys.chatLayoutStyle) ?? "") ?? .classic
         composerStyle = ComposerStyle(rawValue: defaults.string(forKey: Keys.composerStyle) ?? "") ?? .original
         let rawFont = defaults.string(forKey: Keys.chatFont) ?? EchoChatFont.system.rawValue
-        chatFont = EchoChatFont(rawValue: rawFont) ?? .system
+        let loadedFonts = ImportedFontStore.loadFonts()
+        importedChatFonts = loadedFonts
+        let savedFont = EchoChatFont(rawValue: rawFont) ?? .system
+        if case .imported(let name) = savedFont, !loadedFonts.contains(where: { $0.postScriptName == name }) {
+            chatFont = .system
+            defaults.set(EchoChatFont.system.rawValue, forKey: Keys.chatFont)
+        } else {
+            chatFont = savedFont
+        }
         fontScale = defaults.object(forKey: Keys.fontScale) == nil ? 1 : defaults.double(forKey: Keys.fontScale)
         showsAIAvatar = defaults.object(forKey: Keys.showsAIAvatar) == nil ? true : defaults.bool(forKey: Keys.showsAIAvatar)
         showsAPIMessageUsage = defaults.bool(forKey: Keys.showsAPIMessageUsage)
@@ -385,6 +394,28 @@ final class AppModel: ObservableObject {
             blur: liquidGlassBlur,
             size: liquidGlassSize
         )
+    }
+
+    var availableChatFonts: [EchoChatFont] {
+        EchoChatFont.allCases + importedChatFonts.map(\.chatFont)
+    }
+
+    func chatFontTitle(_ font: EchoChatFont) -> String {
+        if case .imported(let name) = font {
+            return importedChatFonts.first(where: { $0.postScriptName == name })?.displayName ?? font.title
+        }
+        return font.title
+    }
+
+    func importChatFont(from url: URL) async throws {
+        let existing = importedChatFonts
+        let imported = try await Task.detached(priority: .userInitiated) {
+            try ImportedFontStore.importFont(from: url, existingFonts: existing)
+        }.value
+        importedChatFonts = ImportedFontStore.sorted(importedChatFonts + imported.filter { record in
+            !importedChatFonts.contains(where: { $0.id == record.id })
+        })
+        if let first = imported.first { chatFont = first.chatFont }
     }
 
     func applyTheme(_ nextTheme: EchoTheme) {

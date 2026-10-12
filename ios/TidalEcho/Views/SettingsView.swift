@@ -2,6 +2,7 @@
 import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 private struct SettingsPageBackground: View {
     let theme: EchoTheme
@@ -552,6 +553,9 @@ private struct AppearanceSettingsView: View {
     @State private var aiAvatarItem: PhotosPickerItem?
     @State private var humanAvatarItem: PhotosPickerItem?
     @State private var imageError: String?
+    @State private var showingFontImporter = false
+    @State private var isImportingFont = false
+    @State private var fontError: String?
     private var palette: EchoPalette { model.theme.palette }
 
     var body: some View {
@@ -615,10 +619,30 @@ private struct AppearanceSettingsView: View {
 
             Section("文字") {
                 Picker("聊天字体", selection: $model.chatFont) {
-                    ForEach(EchoChatFont.allCases) { font in
-                        Text(font.title).tag(font)
+                    ForEach(model.availableChatFonts) { font in
+                        Text(model.chatFontTitle(font)).tag(font)
                     }
                 }
+
+                Button { showingFontImporter = true } label: {
+                    HStack {
+                        Label("导入字体", systemImage: "square.and.arrow.down")
+                        Spacer()
+                        if isImportingFont { ProgressView().controlSize(.small) }
+                    }
+                }
+                .disabled(isImportingFont)
+                Text("从“文件”选择 TTF、OTF 或 TTC 字体，导入后会自动选用。")
+                    .font(.footnote)
+                    .foregroundStyle(palette.secondaryText)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("小雪，今天的花很好看。")
+                    Text("Tidal Echo · 0123456789")
+                }
+                .font(model.chatFont.font(size: 17 * model.fontScale, numericWeight: model.chatWeight))
+                .foregroundStyle(palette.text)
+                .padding(.vertical, 5)
 
                 VStack(alignment: .leading, spacing: 9) {
                     HStack {
@@ -646,6 +670,10 @@ private struct AppearanceSettingsView: View {
                             .foregroundStyle(palette.secondaryText)
                     } else if model.chatFont == .wenKai {
                         Text(EchoChatFont.wenKaiWeightDiagnostic(model.chatWeight))
+                            .font(.caption2)
+                            .foregroundStyle(palette.secondaryText)
+                    } else if case .imported = model.chatFont {
+                        Text("可变字体支持调整字重；普通字体保留文件自身的字重。")
                             .font(.caption2)
                             .foregroundStyle(palette.secondaryText)
                     }
@@ -750,6 +778,30 @@ private struct AppearanceSettingsView: View {
         .listRowBackground(settingsRowBackground(theme: model.theme, palette: palette))
         .navigationTitle("外观与聊天")
         .navigationBarTitleDisplayMode(.inline)
+        .fileImporter(
+            isPresented: $showingFontImporter,
+            allowedContentTypes: [.font] + ["ttf", "otf", "ttc"].compactMap { UTType(filenameExtension: $0) },
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                isImportingFont = true
+                Task {
+                    defer { isImportingFont = false }
+                    do { try await model.importChatFont(from: url) }
+                    catch { fontError = error.localizedDescription }
+                }
+            case .failure(let error):
+                if (error as NSError).code != NSUserCancelledError { fontError = error.localizedDescription }
+            }
+        }
+        .alert("字体导入失败", isPresented: Binding(
+            get: { fontError != nil },
+            set: { if !$0 { fontError = nil } }
+        )) {
+            Button("好", role: .cancel) { fontError = nil }
+        } message: { Text(fontError ?? "") }
         .onChange(of: backgroundItem) { item in loadPhoto(item, kind: .background) }
         .onChange(of: aiAvatarItem) { item in loadPhoto(item, kind: .aiAvatar) }
         .onChange(of: humanAvatarItem) { item in loadPhoto(item, kind: .humanAvatar) }

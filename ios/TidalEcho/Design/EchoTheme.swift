@@ -90,13 +90,42 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
-enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
+enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
     case system
     case serif
     case wenKai
     case anthropicSerif
     case rounded
     case monospaced
+    case imported(String)
+
+    static let allCases: [EchoChatFont] = [.system, .serif, .wenKai, .anthropicSerif, .rounded, .monospaced]
+
+    var rawValue: String {
+        switch self {
+        case .system: return "system"
+        case .serif: return "serif"
+        case .wenKai: return "wenKai"
+        case .anthropicSerif: return "anthropicSerif"
+        case .rounded: return "rounded"
+        case .monospaced: return "monospaced"
+        case .imported(let name): return "imported:\(name)"
+        }
+    }
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case "system": self = .system
+        case "serif": self = .serif
+        case "wenKai": self = .wenKai
+        case "anthropicSerif": self = .anthropicSerif
+        case "rounded": self = .rounded
+        case "monospaced": self = .monospaced
+        default:
+            guard rawValue.hasPrefix("imported:"), rawValue.count > "imported:".count else { return nil }
+            self = .imported(String(rawValue.dropFirst("imported:".count)))
+        }
+    }
 
     var id: String { rawValue }
 
@@ -108,12 +137,13 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
         case .anthropicSerif: return "Anthropic"
         case .rounded: return "圆体"
         case .monospaced: return "等宽"
+        case .imported(let name): return name
         }
     }
 
     var design: Font.Design {
         switch self {
-        case .system: return .default
+        case .system, .imported: return .default
         case .serif, .wenKai, .anthropicSerif: return .serif
         case .rounded: return .rounded
         case .monospaced: return .monospaced
@@ -143,10 +173,13 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
                 .weight(weight)
         case .rounded, .monospaced:
             return .system(size: CGFloat(size), weight: weight, design: design)
+        case .imported(let name):
+            return .custom(name, size: CGFloat(size)).weight(weight)
         }
     }
 
     func font(size: Double, numericWeight: Double) -> Font {
+        if case .imported = self { return Font(uiFont(size: size, numericWeight: numericWeight)) }
         if self == .anthropicSerif {
             return Font(Self.anthropicSerifFont(
                 size: CGFloat(size),
@@ -201,6 +234,8 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
             return UIFont(descriptor: descriptor, size: pointSize)
         case .monospaced:
             return UIFont.monospacedSystemFont(ofSize: pointSize, weight: weight)
+        case .imported(let name):
+            return Self.importedFont(name: name, size: pointSize, numericWeight: numericWeight)
         }
     }
 
@@ -225,6 +260,29 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
 
     /// 'wght' 轴的四字符标识
     static let wghtAxisID: UInt32 = 0x77676874
+
+    private static func importedFont(name: String, size: CGFloat, numericWeight: Double) -> UIFont {
+        guard let base = UIFont(name: name, size: size) else {
+            return UIFont.systemFont(ofSize: size, weight: continuousWeight(numericWeight))
+        }
+        if let axes = CTFontCopyVariationAxes(base as CTFont) as? [[String: Any]],
+           let axis = axes.first(where: {
+               ($0[kCTFontVariationAxisIdentifierKey as String] as? NSNumber)?.uint32Value == wghtAxisID
+           }),
+           let minimum = axis[kCTFontVariationAxisMinimumValueKey as String] as? NSNumber,
+           let maximum = axis[kCTFontVariationAxisMaximumValueKey as String] as? NSNumber {
+            let value = min(max(numericWeight, minimum.doubleValue), maximum.doubleValue)
+            let descriptor = base.fontDescriptor.addingAttributes([
+                UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String): [
+                    NSNumber(value: wghtAxisID): NSNumber(value: value)
+                ]
+            ])
+            return UIFont(descriptor: descriptor, size: size)
+        }
+        // Static font files keep their own outlines instead of synthesizing a
+        // different face; a separate imported weight remains a separate choice.
+        return base
+    }
 
     /// 霞鹜文楷随 App 打包的是三个常用字子集。滑块落在中间或更粗的数值时，
     /// 取距离最近的真实字重，避免系统伪粗体破坏文楷的笔画形态。
@@ -333,6 +391,8 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
                 ?? UIFont.systemFont(ofSize: pointSize).lineHeight
         case .monospaced:
             return UIFont.monospacedSystemFont(ofSize: pointSize, weight: .regular).lineHeight
+        case .imported(let name):
+            return Self.importedFont(name: name, size: pointSize, numericWeight: 400).lineHeight
         }
     }
 }
