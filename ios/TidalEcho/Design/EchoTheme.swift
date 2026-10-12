@@ -92,6 +92,8 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
 
 enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
     case system
+    case japanese
+    case hongKong
     case serif
     case wenKai
     case anthropicSerif
@@ -99,11 +101,13 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
     case monospaced
     case imported(String)
 
-    static let allCases: [EchoChatFont] = [.system, .serif, .wenKai, .anthropicSerif, .rounded, .monospaced]
+    static let allCases: [EchoChatFont] = [.system, .japanese, .hongKong, .serif, .wenKai, .anthropicSerif, .rounded, .monospaced]
 
     var rawValue: String {
         switch self {
         case .system: return "system"
+        case .japanese: return "japanese"
+        case .hongKong: return "hongKong"
         case .serif: return "serif"
         case .wenKai: return "wenKai"
         case .anthropicSerif: return "anthropicSerif"
@@ -116,6 +120,8 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
     init?(rawValue: String) {
         switch rawValue {
         case "system": self = .system
+        case "japanese": self = .japanese
+        case "hongKong": self = .hongKong
         case "serif": self = .serif
         case "wenKai": self = .wenKai
         case "anthropicSerif": self = .anthropicSerif
@@ -132,6 +138,8 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
     var title: String {
         switch self {
         case .system: return "黑体"
+        case .japanese: return "日文字形"
+        case .hongKong: return "繁体中文（香港）字形"
         case .serif: return "宋体"
         case .wenKai: return "霞鹜文楷"
         case .anthropicSerif: return "Anthropic"
@@ -143,7 +151,7 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
 
     var design: Font.Design {
         switch self {
-        case .system, .imported: return .default
+        case .system, .japanese, .hongKong, .imported: return .default
         case .serif, .wenKai, .anthropicSerif: return .serif
         case .rounded: return .rounded
         case .monospaced: return .monospaced
@@ -156,6 +164,8 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
             // PWA 实测走的就是系统那份可变中文字体(PingFangUI)，这里跟着走系统字体，
             // 免得气泡(连续字重)跟别处(静态 PingFang SC)字形对不上。
             return .system(size: CGFloat(size), weight: weight, design: .default)
+        case .japanese, .hongKong:
+            return Font(uiFont(size: size, numericWeight: Self.numericWeight(for: weight)))
         case .serif:
             return .custom("Songti SC", size: CGFloat(size)).weight(weight)
         case .wenKai:
@@ -179,6 +189,7 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
     }
 
     func font(size: Double, numericWeight: Double) -> Font {
+        if glyphLanguage != nil { return Font(uiFont(size: size, numericWeight: numericWeight)) }
         if case .imported = self { return Font(uiFont(size: size, numericWeight: numericWeight)) }
         if self == .anthropicSerif {
             return Font(Self.anthropicSerifFont(
@@ -217,6 +228,9 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
         case .system:
             return Self.variableSans(size: pointSize, weight: numericWeight)
                 ?? UIFont.systemFont(ofSize: pointSize, weight: weight)
+        case .japanese, .hongKong:
+            return Self.regionalSystemFont(size: pointSize, numericWeight: numericWeight,
+                                           language: glyphLanguage ?? "zh-Hans")
         case .serif:
             let base = UIFont(name: "Songti SC", size: pointSize)
                 ?? UIFont.systemFont(ofSize: pointSize, weight: weight)
@@ -237,6 +251,57 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
         case .imported(let name):
             return Self.importedFont(name: name, size: pointSize, numericWeight: numericWeight)
         }
+    }
+
+    /// Used only for chat typography, never the app's UI locale or message text.
+    var glyphLanguage: String? {
+        switch self {
+        case .japanese: return "ja"
+        case .hongKong: return "zh-Hant-HK"
+        default: return nil
+        }
+    }
+
+    var usesSystemMetrics: Bool { self == .system || glyphLanguage != nil }
+
+    private static func numericWeight(for weight: Font.Weight) -> Double {
+        let weights: [(Font.Weight, Double)] = [
+            (.ultraLight, 100), (.thin, 200), (.light, 300), (.regular, 400),
+            (.medium, 500), (.semibold, 600), (.bold, 700), (.heavy, 800), (.black, 900)
+        ]
+        return weights.first(where: { $0.0 == weight })?.1 ?? 400
+    }
+
+    private static let regionalFontCache: NSCache<NSString, UIFont> = {
+        let cache = NSCache<NSString, UIFont>()
+        cache.countLimit = 96
+        return cache
+    }()
+
+    private static func regionalSystemFont(size: CGFloat, numericWeight: Double, language: String) -> UIFont {
+        let key = "\(language):\(size):\(numericWeight)" as NSString
+        if let cached = regionalFontCache.object(forKey: key) { return cached }
+        let base = UIFont.systemFont(ofSize: size, weight: continuousWeight(numericWeight))
+        // Keep system Latin letters and digits. For missing CJK characters,
+        // request the same language-specific fallback ordering used by iOS.
+        // Simplified Chinese remains available for characters absent in Japanese.
+        let languages = [language, "zh-Hans"] as CFArray
+        guard let descriptors = CTFontCopyDefaultCascadeListForLanguages(base as CTFont, languages)
+                as? [CTFontDescriptor] else { return base }
+        let cascade = descriptors.compactMap { descriptor -> UIFontDescriptor? in
+            guard let attributes = CTFontDescriptorCopyAttributes(descriptor) as? [String: Any] else { return nil }
+            // Core Text and UIKit share the descriptor attribute names. Preserve
+            // the returned weight/variation attributes instead of copying names
+            // alone, which would flatten every weight to the regular face.
+            let uiAttributes = Dictionary(uniqueKeysWithValues: attributes.map {
+                (UIFontDescriptor.AttributeName(rawValue: $0.key), $0.value)
+            })
+            return UIFontDescriptor(fontAttributes: uiAttributes)
+        }
+        guard !cascade.isEmpty else { return base }
+        let font = UIFont(descriptor: base.fontDescriptor.addingAttributes([.cascadeList: cascade]), size: size)
+        regionalFontCache.setObject(font, forKey: key)
+        return font
     }
 
     /// CSS 字重(100…900) → UIFont.Weight 的连续标度，按系统命名字重分段线性插值。
@@ -378,6 +443,8 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
             // 渲染已改走系统字体，行高基准必须跟着换：否则 lineSpacing 会拿另一套字体的
             // 行盒去减，行距会莫名变松或变紧。总行高仍是 size × 1.64，视觉节奏不变。
             return UIFont.systemFont(ofSize: pointSize).lineHeight
+        case .japanese, .hongKong:
+            return uiFont(size: size, numericWeight: 400).lineHeight
         case .serif:
             return UIFont(name: "Songti SC", size: pointSize)?.lineHeight
                 ?? UIFont.systemFont(ofSize: pointSize).lineHeight
@@ -398,27 +465,27 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
 }
 
 enum PWAChatMetrics {
-    // Keep the requested slightly-open rhythm. Only 黑体 adopts the PWA's
+    // Keep the requested slightly-open rhythm. System fonts adopt the PWA's
     // resolved iPhone sizes; the App's existing 宋体/圆体/等宽 sizing stays put.
     static let lineHeightRatio = 1.64
     static let mobileBubbleFontSize = 14.0
     static let nativeBubbleFontSize = 16.0
 
     static func bubbleFontSize(for font: EchoChatFont) -> Double {
-        font == .system ? mobileBubbleFontSize : nativeBubbleFontSize
+        font.usesSystemMetrics ? mobileBubbleFontSize : nativeBubbleFontSize
     }
 
     static func thinkingFontSize(for font: EchoChatFont) -> Double {
-        font == .system ? 12 : 14
+        font.usesSystemMetrics ? 12 : 14
     }
 
     static func composerFontSize(for font: EchoChatFont) -> Double {
-        font == .system ? 15 : 16
+        font.usesSystemMetrics ? 15 : 16
     }
 
     static func lineSpacing(font: EchoChatFont, size: Double) -> CGFloat {
         let targetLineHeight: CGFloat
-        if font == .system {
+        if font.usesSystemMetrics {
             targetLineHeight = CGFloat(size * lineHeightRatio)
         } else {
             let scale = size / nativeBubbleFontSize

@@ -623,6 +623,11 @@ private struct AppearanceSettingsView: View {
                         Text(model.chatFontTitle(font)).tag(font)
                     }
                 }
+                if model.chatFont.glyphLanguage != nil {
+                    Text("只切换聊天里的汉字字形，界面保留简体中文，消息按原文保存和发送。")
+                        .font(.footnote)
+                        .foregroundStyle(palette.secondaryText)
+                }
 
                 Button { showingFontImporter = true } label: {
                     HStack {
@@ -638,6 +643,9 @@ private struct AppearanceSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text("小雪，今天的花很好看。")
+                    if model.chatFont.glyphLanguage != nil {
+                        Text("骨、直、令、返、雨、花、雪")
+                    }
                     Text("Tidal Echo · 0123456789")
                 }
                 .font(model.chatFont.font(size: 17 * model.fontScale, numericWeight: model.chatWeight))
