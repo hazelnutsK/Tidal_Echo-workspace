@@ -19,6 +19,30 @@ struct APIClient {
         return try decoder.decode(HistoryResponse.self, from: data).messages
     }
 
+    /// 最新的 `limit` 条（before > 0 时是 id < before 的最新 `limit` 条），旧→新。
+    /// 开屏只拉这一页；原样的响应体一并交回去当本地缓存。
+    func recentHistory(before: Int = 0, limit: Int, sessionID: String? = nil) async throws -> (messages: [ChatMessage], raw: Data) {
+        var components = URLComponents(url: endpoint("app/history"), resolvingAgainstBaseURL: false)
+        var queryItems = [
+            URLQueryItem(name: "tail", value: "1"),
+            URLQueryItem(name: "limit", value: String(limit))
+        ]
+        if before > 0 {
+            queryItems.append(URLQueryItem(name: "before", value: String(before)))
+        }
+        if let sessionID, !sessionID.isEmpty {
+            queryItems.append(URLQueryItem(name: "session_id", value: sessionID))
+        }
+        components?.queryItems = queryItems
+        guard let url = components?.url else { throw APIError.invalidURL }
+        let data = try await data(for: request(url: url))
+        return (try decoder.decode(HistoryResponse.self, from: data).messages, data)
+    }
+
+    static func decodeHistory(_ data: Data) throws -> [ChatMessage] {
+        try JSONDecoder().decode(HistoryResponse.self, from: data).messages
+    }
+
     func send(
         text: String,
         attachments: [Attachment],
@@ -591,8 +615,19 @@ struct APIClient {
         return req
     }
 
+    /// 从后台回来，第一枪常打在 iOS 冻死的旧 keep-alive 连接上，报 -1005
+    /// "The network connection was lost."。GET 重来一次就是新连接；POST 不重试，免得发两遍。
+    private func perform(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        do {
+            return try await URLSession.shared.data(for: request)
+        } catch let error as URLError where error.code == .networkConnectionLost && request.httpMethod == "GET" {
+            try await Task.sleep(nanoseconds: 300_000_000)
+            return try await URLSession.shared.data(for: request)
+        }
+    }
+
     private func data(for request: URLRequest) async throws -> Data {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await perform(request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             if http.statusCode == 401 { throw APIError.unauthorized }

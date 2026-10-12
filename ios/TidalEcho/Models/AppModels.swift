@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 enum MessageAuthor: String, Codable, Hashable {
@@ -56,6 +57,8 @@ enum EchoBubbleShapeStyle: String, Codable, CaseIterable, Identifiable {
     case standard
     case telegram
     case upperTail
+    case jelly
+    case neat
 
     var id: String { rawValue }
     var title: String {
@@ -63,8 +66,30 @@ enum EchoBubbleShapeStyle: String, Codable, CaseIterable, Identifiable {
         case .standard: return "默认"
         case .telegram: return "仿 TG"
         case .upperTail: return "上尖角"
+        case .jelly: return "软糖"
+        case .neat: return "利落"
         }
     }
+
+    /// The two silhouettes she tuned in the bubble fitting room (2026-09-27):
+    /// four equal smoothed corners, no tail, radius and padding fixed.
+    var smoothSpec: SmoothBubbleSpec? {
+        switch self {
+        case .jelly:
+            return SmoothBubbleSpec(radius: 25, smoothing: 0.92, horizontalPadding: 16, verticalPadding: 10)
+        case .neat:
+            return SmoothBubbleSpec(radius: 14, smoothing: 0.60, horizontalPadding: 14, verticalPadding: 9)
+        case .standard, .telegram, .upperTail:
+            return nil
+        }
+    }
+}
+
+struct SmoothBubbleSpec: Hashable {
+    let radius: CGFloat
+    let smoothing: CGFloat
+    let horizontalPadding: CGFloat
+    let verticalPadding: CGFloat
 }
 
 enum AIReplyTiming: String, Codable, CaseIterable, Identifiable {

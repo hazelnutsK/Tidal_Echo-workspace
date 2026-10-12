@@ -8,6 +8,9 @@ struct TidalEchoApp: App {
         if ProcessInfo.processInfo.arguments.contains("--imessage-ui-review") {
             return IMessageReviewFixture.makeModel()
         }
+        if ProcessInfo.processInfo.arguments.contains("--space-ui-review") {
+            return SpaceReviewFixture.makeModel()
+        }
         #endif
         return AppModel()
     }()
@@ -24,6 +27,9 @@ struct TidalEchoApp: App {
         if ProcessInfo.processInfo.arguments.contains("--imessage-ui-review") {
             // No bootstrap, relay connection, or real messages in UI tests.
             ChatView(model: model)
+        } else if ProcessInfo.processInfo.arguments.contains("--space-ui-review") {
+            // 空间页截图：样例数据，不连 relay。
+            SpaceReviewScreen(model: model, page: SpaceReviewFixture.page)
         } else {
             RootView(model: model)
         }

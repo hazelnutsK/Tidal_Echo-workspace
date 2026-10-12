@@ -80,9 +80,6 @@ final class AppModel: ObservableObject {
     @Published var bubbleRadius: Double {
         didSet { UserDefaults.standard.set(bubbleRadius, forKey: Keys.bubbleRadius) }
     }
-    @Published var bubbleInflation: Double {
-        didSet { UserDefaults.standard.set(bubbleInflation, forKey: Keys.bubbleInflation) }
-    }
     @Published var chatWeight: Double {
         didSet { UserDefaults.standard.set(chatWeight, forKey: Keys.chatWeight) }
     }
@@ -172,6 +169,9 @@ final class AppModel: ObservableObject {
     private var isCatchingUp = false
     private var temporaryID = -1
     private var didBootstrap = false
+    private var backgroundedAt: Date?
+    /// 最近一次从服务器拉下来的最新窗口（加上之后新来的）。**不再是全量历史**——
+    /// 更早的上翻时按需去服务器要（2026-09-30 之前开屏要翻 41 页 / 8.6 MB）。
     private var historyArchive: [ChatMessage] = []
     private var locallyHiddenMessageIDs: Set<Int> = []
     private var missedCallMessageIDs: Set<Int> = []
@@ -204,7 +204,6 @@ final class AppModel: ObservableObject {
         static let aiBubbleOpacity = "tidalEcho.aiBubbleOpacity"
         static let humanBubbleOpacity = "tidalEcho.humanBubbleOpacity"
         static let bubbleRadius = "tidalEcho.bubbleRadius"
-        static let bubbleInflation = "tidalEcho.bubbleInflation"
         static let chatWeight = "tidalEcho.chatWeight"
         static let backgroundOpacity = "tidalEcho.backgroundOpacity"
         static let backgroundBlur = "tidalEcho.backgroundBlur"
@@ -300,8 +299,6 @@ final class AppModel: ObservableObject {
             bubbleRadius = savedBubbleRadius
         }
         defaults.set(true, forKey: Keys.pwaBubbleMetricsV1)
-        let savedInflation = defaults.double(forKey: Keys.bubbleInflation)
-        bubbleInflation = savedInflation.isFinite ? min(max(savedInflation, 0), 1) : 0
         chatWeight = defaults.object(forKey: Keys.chatWeight) == nil ? 400 : defaults.double(forKey: Keys.chatWeight)
         backgroundOpacity = defaults.object(forKey: Keys.backgroundOpacity) == nil ? 1 : defaults.double(forKey: Keys.backgroundOpacity)
         backgroundBlur = defaults.object(forKey: Keys.backgroundBlur) == nil ? 0 : defaults.double(forKey: Keys.backgroundBlur)
@@ -520,6 +517,20 @@ final class AppModel: ObservableObject {
         return false
     }
 
+    /// 网络本身抖了一下（切后台回来的死连接、没信号、超时）。这类不该弹窗骂她，
+    /// 记下要重载，等 SSE 重新连上自己补。
+    static func isTransientNetwork(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .networkConnectionLost, .notConnectedToInternet, .timedOut,
+             .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
+             .dataNotAllowed, .internationalRoamingOff, .secureConnectionFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
     func bootstrap() async {
         guard !didBootstrap else { return }
         didBootstrap = true
@@ -563,8 +574,13 @@ final class AppModel: ObservableObject {
         updateTypingState(false)
         isStreamConnected = false
         clawdPetState = .idle
+        removeHistoryCaches()
         KeychainStore.delete(account: Keys.relaySecret)
         phase = .signedOut
+    }
+
+    func noteEnteredBackground() {
+        backgroundedAt = Date()
     }
 
     /// 回到前台。iOS 冻过一次进程之后这边可能是半死的：后台那趟历史被掐断
@@ -588,10 +604,13 @@ final class AppModel: ObservableObject {
             await bootstrap()
             return
         }
+        // 在后台待久了,SSE 多半已被系统掐死、却还没报错(绿点亮着但不吐字)——直接换一条新的
+        let longBackground = backgroundedAt.map { Date().timeIntervalSince($0) > 20 } ?? false
+        backgroundedAt = nil
+        if longBackground || !isStreamConnected { startStream(using: client) }
         if historyNeedsReload || messages.isEmpty {
             await loadHistory(showLoadingState: messages.isEmpty)
         }
-        if !isStreamConnected { startStream(using: client) }
         // 这两个循环任务在后台可能已经自己退了(sleep 被打断就 return),重开是幂等的
         startIncrementalSync(using: client)
         startHeartbeat()
@@ -608,20 +627,37 @@ final class AppModel: ObservableObject {
 
     func loadOlderHistory() async -> Int? {
         guard !isLoadingOlderHistory, canLoadOlderHistory,
-              let oldestID = messages.filter({ $0.id > 0 }).map(\.id).min(),
-              let oldestIndex = historyArchive.firstIndex(where: { $0.id == oldestID }),
-              oldestIndex > 0 else {
+              let oldestID = messages.filter({ $0.id > 0 }).map(\.id).min() else {
             canLoadOlderHistory = false
             return nil
         }
         isLoadingOlderHistory = true
         defer { isLoadingOlderHistory = false }
-        let start = max(0, oldestIndex - Self.olderHistoryPageSize)
-        let older = historyArchive[start..<oldestIndex]
-        var merged = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
+        let older: [ChatMessage]
+        if let oldestIndex = historyArchive.firstIndex(where: { $0.id == oldestID }), oldestIndex > 0 {
+            // 手里的窗口还没翻完(跳转过之后会这样),先用手里的
+            older = Array(historyArchive[max(0, oldestIndex - Self.olderHistoryPageSize)..<oldestIndex])
+        } else {
+            guard let client else { return nil }
+            let sessionID = activeSessionID
+            do {
+                let batch = try await client.recentHistory(
+                    before: oldestID,
+                    limit: Self.olderHistoryPageSize,
+                    sessionID: sessionID
+                ).messages
+                guard sessionID == activeSessionID else { return nil }
+                canLoadOlderHistory = batch.count >= Self.olderHistoryPageSize
+                older = visibleHistoryMessages(batch)
+            } catch {
+                // 断网之类:canLoadOlderHistory 保持 true,她再往上划一下会再试
+                return nil
+            }
+        }
+        guard !older.isEmpty else { return nil }
+        var merged = Dictionary(messages.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
         older.forEach { merged[$0.id] = $0 }
         messages = merged.values.sorted(by: Self.messageComesBefore)
-        canLoadOlderHistory = start > 0
         return oldestID
     }
 
@@ -642,14 +678,40 @@ final class AppModel: ObservableObject {
             await activateSession(targetSession)
         }
         guard let index = historyArchive.firstIndex(where: { $0.id == message.id }) else {
-            errorMessage = "没有在当前记录中找到这条消息"
+            await jumpToRemoteMessage(message)
             return
         }
         let start = max(0, index - 45)
         let end = min(historyArchive.count, index + 46)
         messages = Array(historyArchive[start..<end])
-        canLoadOlderHistory = start > 0
+        // 窗口顶上没了也还可能有更早的——交给 loadOlderHistory 去服务器问
+        canLoadOlderHistory = true
         navigationRequest = MessageNavigationRequest(messageID: message.id)
+    }
+
+    /// 搜到的消息不在手里的最新窗口里:去服务器把它前后各四十几条要回来。
+    private func jumpToRemoteMessage(_ message: ChatMessage) async {
+        guard let client else { return }
+        let sessionID = activeSessionID
+        do {
+            async let beforePage = client.recentHistory(before: message.id + 1, limit: 46, sessionID: sessionID)
+            async let afterPage = client.history(since: message.id, limit: 45, sessionID: sessionID)
+            let earlier = try await beforePage
+            let later = try await afterPage
+            let window = visibleHistoryMessages(earlier.messages + later)
+            guard sessionID == activeSessionID else { return }
+            guard window.contains(where: { $0.id == message.id }) else {
+                errorMessage = "没有在当前记录中找到这条消息"
+                return
+            }
+            messages = Dictionary(window.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
+                .values.sorted(by: Self.messageComesBefore)
+            canLoadOlderHistory = true
+            navigationRequest = MessageNavigationRequest(messageID: message.id)
+        } catch {
+            guard !Self.isCancellation(error) else { return }
+            errorMessage = "跳转失败：\(error.localizedDescription)"
+        }
     }
 
     func refreshSessions() async {
@@ -1543,13 +1605,22 @@ final class AppModel: ObservableObject {
         }
         errorMessage = nil
         let nextClient = APIClient(baseURL: url, secret: secret)
+        // 冷启动:先把上次存下的那屏聊天摆出来,网络在后面补。她不用盯着空白等。
+        if !persist, messages.isEmpty, let cached = readHistoryCache(sessionID: activeSessionID), !cached.isEmpty {
+            client = nextClient
+            isLoadingHistory = true
+            applyHistoryWindow(cached, requestedCount: Self.initialHistoryWindow)
+            phase = .connected
+        }
         do {
             _ = try await nextClient.history(since: 0, limit: 1)
             client = nextClient
-            if let settings = try? await nextClient.chatMode() {
+            async let modeRequest = nextClient.chatMode()
+            async let clawdRequest = nextClient.clawdState()
+            if let settings = try? await modeRequest {
                 chatMode = settings.mode
             }
-            clawdPetState = (try? await nextClient.clawdState()) ?? .idle
+            clawdPetState = (try? await clawdRequest) ?? .idle
             if persist {
                 UserDefaults.standard.set(url.absoluteString, forKey: Keys.relayURL)
                 try KeychainStore.save(secret, account: Keys.relaySecret)
@@ -1570,14 +1641,27 @@ final class AppModel: ObservableObject {
             startHeartbeat()
             if showsAPIMessageUsage { _ = try? await settingsLoopConfig() }
         } catch {
-            client = nil
+            isLoadingHistory = false
             if Self.isCancellation(error) {
                 // 后台那趟连接被系统掐断:别登出、别报错——把重来的门留着，
                 // 回到前台 resumeFromForeground() 会再连一次。
+                client = nil
                 didBootstrap = false
                 if phase != .connected { phase = .launching }
                 return
             }
+            if !persist, Self.isTransientNetwork(error) {
+                // 开机时网不好(电梯里、刚解锁还没连上):钥匙是好的,别把她踢回登录页。
+                // 留在聊天里,SSE 自己每 3 秒重试,连上那一下 setStreamConnection 会补历史。
+                client = nextClient
+                historyNeedsReload = true
+                phase = .connected
+                startStream(using: nextClient)
+                startIncrementalSync(using: nextClient)
+                startHeartbeat()
+                return
+            }
+            client = nil
             phase = .signedOut
             errorMessage = error.localizedDescription
         }
@@ -1588,44 +1672,84 @@ final class AppModel: ObservableObject {
         if showLoadingState { isLoadingHistory = true }
         defer { if showLoadingState { isLoadingHistory = false } }
 
+        let sessionID = activeSessionID
         do {
-            var cursor = 0
-            var archive: [ChatMessage] = []
-            for _ in 0..<200 {
-                let batch = try await client.history(since: cursor, limit: 500, sessionID: activeSessionID)
-                guard !batch.isEmpty else { break }
-                archive.append(contentsOf: batch.filter {
-                    !$0.meta.hidden && !locallyHiddenMessageIDs.contains($0.id) && messageBelongsToActiveSession($0)
-                }.map(normalizingMissedCallState))
-                guard let last = batch.last else { break }
-                cursor = max(cursor, last.id)
-                if batch.count < 500 { break }
-            }
-            historyArchive = Dictionary(uniqueKeysWithValues: archive.map { ($0.id, $0) })
-                .values.sorted(by: Self.messageComesBefore)
-            // Render only the newest window on launch. Building hundreds of variable-height
-            // SwiftUI rows makes ScrollViewReader visibly travel through old conversations.
-            let historyMaxID = historyArchive.map(\.id).max() ?? 0
-            let visibleHistory = historyArchive.suffix(Self.initialHistoryWindow)
-            var merged = Dictionary(uniqueKeysWithValues: visibleHistory.map { ($0.id, $0) })
-            // Preserve SSE messages that arrived after the history snapshot, plus any
-            // optimistic outgoing message still waiting for its permanent server id.
-            for message in messages where (message.id < 0 || message.id > historyMaxID) && messageBelongsToActiveSession(message) {
-                merged[message.id] = message
-            }
-            messages = merged.values.sorted(by: Self.messageComesBefore)
-            restoreBundledMessagesFromHistory()
-            canLoadOlderHistory = historyArchive.count > visibleHistory.count
+            // 只要最新一屏。以前是从第 0 条往后翻完整个库(2 万多条)再只显示最后 120 条。
+            let page = try await client.recentHistory(limit: Self.initialHistoryWindow, sessionID: sessionID)
+            guard sessionID == activeSessionID else { return }
+            let historyMaxID = applyHistoryWindow(page.messages, requestedCount: Self.initialHistoryWindow)
+            writeHistoryCache(page.raw, sessionID: sessionID)
             historyNeedsReload = false
             if UIApplication.shared.applicationState == .active {
                 markNativeNotificationCursor(historyMaxID)
             }
         } catch {
-            // 半路断掉的这一趟没有写进 messages,聊天现在是空的——记下来回前台补。
+            // 半路断掉的这一趟没有写进 messages——记下来,回前台或 SSE 重连时补。
             historyNeedsReload = true
-            guard !Self.isCancellation(error) else { return }
+            guard !Self.isCancellation(error), !Self.isTransientNetwork(error) else { return }
             errorMessage = "聊天记录加载失败：\(error.localizedDescription)"
         }
+    }
+
+    private func visibleHistoryMessages(_ batch: [ChatMessage]) -> [ChatMessage] {
+        batch.filter {
+            !$0.meta.hidden && !locallyHiddenMessageIDs.contains($0.id) && messageBelongsToActiveSession($0)
+        }.map(normalizingMissedCallState)
+    }
+
+    /// 把服务器(或本地缓存)给的最新窗口铺进聊天。返回窗口里最大的 id。
+    @discardableResult
+    private func applyHistoryWindow(_ batch: [ChatMessage], requestedCount: Int) -> Int {
+        historyArchive = Dictionary(visibleHistoryMessages(batch).map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
+            .values.sorted(by: Self.messageComesBefore)
+        let historyMaxID = historyArchive.map(\.id).max() ?? 0
+        var merged = Dictionary(historyArchive.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
+        // Preserve SSE messages that arrived after the history snapshot, plus any
+        // optimistic outgoing message still waiting for its permanent server id.
+        for message in messages where (message.id < 0 || message.id > historyMaxID) && messageBelongsToActiveSession(message) {
+            merged[message.id] = message
+        }
+        messages = merged.values.sorted(by: Self.messageComesBefore)
+        restoreBundledMessagesFromHistory()
+        canLoadOlderHistory = batch.count >= requestedCount
+        return historyMaxID
+    }
+
+    // MARK: 本地聊天缓存——冷启动先摆上次那屏,不等网络
+
+    private static func historyCacheURL(sessionID: String) -> URL? {
+        guard let base = try? FileManager.default.url(
+            for: .cachesDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ) else { return nil }
+        let safeName = Data(sessionID.utf8).base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+        return base
+            .appendingPathComponent("TidalEchoHistory", isDirectory: true)
+            .appendingPathComponent("\(safeName).json")
+    }
+
+    private func writeHistoryCache(_ raw: Data, sessionID: String) {
+        guard let url = Self.historyCacheURL(sessionID: sessionID) else { return }
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? raw.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    private func readHistoryCache(sessionID: String) -> [ChatMessage]? {
+        guard let url = Self.historyCacheURL(sessionID: sessionID),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return try? APIClient.decodeHistory(data)
+    }
+
+    private func removeHistoryCaches() {
+        guard let file = Self.historyCacheURL(sessionID: Self.legacySessionID) else { return }
+        try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
     }
 
     private func restoreBundledMessagesFromHistory() {
@@ -1819,6 +1943,13 @@ final class AppModel: ObservableObject {
 
     private func setStreamConnection(_ connected: Bool) {
         isStreamConnected = connected
+        // 之前那趟历史因为网络抖了没拉成:线一通就补上,不用等她切前后台
+        if connected, historyNeedsReload, phase == .connected, !isLoadingHistory {
+            Task { [weak self] in
+                guard let self else { return }
+                await self.loadHistory(showLoadingState: self.messages.isEmpty)
+            }
+        }
     }
 
     private func updateTypingState(_ active: Bool) {

@@ -464,7 +464,6 @@ struct ChatView: View {
                                 ? model.humanBubbleOpacity
                                 : model.aiBubbleOpacity,
                             bubbleRadius: model.bubbleRadius,
-                            bubbleInflation: model.bubbleInflation,
                             bubbleWidthScale: model.bubbleWidthScale,
                             bubbleBorderWidth: model.bubbleBorderWidth,
                             bubbleStyle: model.bubbleStyle,
@@ -584,7 +583,6 @@ struct ChatView: View {
                             aiBubbleTextColor: model.resolvedAIBubbleTextColor(default: palette.text),
                             bubbleOpacity: model.aiBubbleOpacity,
                             bubbleRadius: model.bubbleRadius,
-                            bubbleInflation: model.bubbleInflation,
                             bubbleWidthScale: model.bubbleWidthScale,
                             bubbleBorderWidth: model.bubbleBorderWidth,
                             bubbleStyle: model.bubbleStyle,

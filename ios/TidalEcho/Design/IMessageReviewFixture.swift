@@ -13,6 +13,9 @@ enum IMessageReviewFixture {
         model.chatLayoutStyle = env["REVIEW_CLASSIC"] == "1" ? .classic : .imessage
         model.composerStyle = ComposerStyle(rawValue: env["REVIEW_COMPOSER"] ?? "original") ?? .original
         model.chatFont = EchoChatFont(rawValue: env["REVIEW_FONT"] ?? "system") ?? .system
+        model.bubbleStyle = .classic
+        model.bubbleShapeStyle = EchoBubbleShapeStyle(rawValue: env["REVIEW_BUBBLE_SHAPE"] ?? "standard") ?? .standard
+        model.showsAIBubble = true
         model.fontScale = 1
         model.chatWeight = 400
         model.showsAIAvatar = false

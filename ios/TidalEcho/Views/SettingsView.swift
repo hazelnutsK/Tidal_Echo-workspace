@@ -842,18 +842,10 @@ private struct AppearanceSettingsView: View {
                 .pickerStyle(.segmented)
             }
 
-            if model.bubbleStyle == .classic && model.bubbleShapeStyle == .standard {
-                settingSlider(
-                    title: "气泡膨胀度",
-                    valueText: "\(Int((model.bubbleInflation * 100).rounded()))%",
-                    value: $model.bubbleInflation,
-                    range: 0...1,
-                    step: 0.01,
-                    note: "往右拉，上下边缘会慢慢鼓起来；0% 保持原来的形状。"
-                )
+            if model.bubbleStyle != .liquid, let spec = model.bubbleShapeStyle.smoothSpec {
                 VStack(spacing: 12) {
-                    inflationPreviewBubble("像这样，慢慢鼓起来", isHuman: false)
-                    inflationPreviewBubble("圆鼓鼓一点", isHuman: true)
+                    smoothPreviewBubble("角给你看清楚", spec: spec, isHuman: false)
+                    smoothPreviewBubble("就这个", spec: spec, isHuman: true)
                 }
                 .padding(.vertical, 7)
             }
@@ -936,13 +928,16 @@ private struct AppearanceSettingsView: View {
                 range: 0...1,
                 step: 0.05
             )
-            settingSlider(
-                title: "气泡圆角",
-                valueText: "\(Int(model.bubbleRadius.rounded()))",
-                value: $model.bubbleRadius,
-                range: 4...26,
-                step: 1
-            )
+            // 软糖/利落 carry their own fixed radius, so the slider would do nothing there.
+            if model.bubbleStyle == .liquid || model.bubbleShapeStyle.smoothSpec == nil {
+                settingSlider(
+                    title: "气泡圆角",
+                    valueText: "\(Int(model.bubbleRadius.rounded()))",
+                    value: $model.bubbleRadius,
+                    range: 4...26,
+                    step: 1
+                )
+            }
             settingSlider(
                 title: "气泡宽度",
                 valueText: "\(Int(model.bubbleWidthScale * 100))%",
@@ -1033,7 +1028,6 @@ private struct AppearanceSettingsView: View {
                 model.aiBubbleOpacity = 1
                 model.humanBubbleOpacity = 1
                 model.bubbleRadius = 14
-                model.bubbleInflation = 0
                 model.bubbleWidthScale = 1
                 model.bubbleBorderWidth = 0
                 model.bubbleStyle = .classic
@@ -1052,13 +1046,8 @@ private struct AppearanceSettingsView: View {
     }
 
     @ViewBuilder
-    private func inflationPreviewBubble(_ text: String, isHuman: Bool) -> some View {
-        let shape = PWAChatBubbleShape(
-            radius: CGFloat(model.bubbleRadius),
-            bottomLeftRadius: isHuman ? CGFloat(model.bubbleRadius) : 5,
-            bottomRightRadius: isHuman ? 5 : CGFloat(model.bubbleRadius),
-            inflation: CGFloat(model.bubbleInflation)
-        )
+    private func smoothPreviewBubble(_ text: String, spec: SmoothBubbleSpec, isHuman: Bool) -> some View {
+        let shape = SmoothCornerBubbleShape(radius: spec.radius, smoothing: spec.smoothing)
         HStack {
             if isHuman { Spacer(minLength: 24) }
             Text(text)
@@ -1069,8 +1058,8 @@ private struct AppearanceSettingsView: View {
                 .foregroundStyle(isHuman
                     ? model.resolvedHumanBubbleTextColor(default: palette.text)
                     : model.resolvedAIBubbleTextColor(default: palette.text))
-                .padding(.horizontal, 13)
-                .padding(.vertical, 9 + PWAChatBubbleShape.inflationPadding(CGFloat(model.bubbleInflation)))
+                .padding(.horizontal, spec.horizontalPadding)
+                .padding(.vertical, spec.verticalPadding)
                 .background {
                     shape.fill((isHuman
                         ? model.resolvedHumanBubbleColor(default: palette.humanBubble)

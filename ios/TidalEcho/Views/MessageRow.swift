@@ -97,7 +97,6 @@ struct MessageRow: View {
     let humanBubbleTextColor: Color
     let bubbleOpacity: Double
     let bubbleRadius: Double
-    let bubbleInflation: Double
     let bubbleWidthScale: Double
     let bubbleBorderWidth: Double
     let bubbleStyle: EchoBubbleStyle
@@ -574,8 +573,12 @@ struct MessageRow: View {
         switch bubbleShapeStyle {
         case .telegram: return -6 // 9pt stack spacing becomes 3pt.
         case .upperTail: return -4 // 9pt stack spacing becomes 5pt.
-        case .standard: return 0
+        case .standard, .jelly, .neat: return 0
         }
+    }
+
+    private var smoothSpec: SmoothBubbleSpec? {
+        bubbleStyle == .classic || bubbleStyle == .frosted ? bubbleShapeStyle.smoothSpec : nil
     }
 
     private var usesTelegramShape: Bool {
@@ -589,17 +592,19 @@ struct MessageRow: View {
     /// text almost flush, so consecutive segments read as one reply's paragraphs
     /// instead of a stack of cards.
     private var bubbleHorizontalPadding: CGFloat {
+        if carriesBubble, let smoothSpec { return smoothSpec.horizontalPadding }
         if isNest { return 10 }
         return usesTelegramShape ? 10 : 13
     }
 
     private var bubbleVerticalPadding: CGFloat {
+        if carriesBubble, let smoothSpec { return smoothSpec.verticalPadding }
         let base: CGFloat = isNest ? (carriesBubble ? 10 : 2) : (usesTelegramShape ? 8 : 9)
         return base + (carriesBubble ? PWAChatBubbleShape.inflationPadding(effectiveBubbleInflation) : 0)
     }
 
     private var effectiveBubbleInflation: CGFloat {
-        bubbleStyle == .classic && bubbleShapeStyle == .standard ? CGFloat(bubbleInflation) : 0
+        bubbleStyle == .classic && bubbleShapeStyle == .standard ? PWAChatBubbleShape.defaultInflation : 0
     }
 
     private var displayedMessageText: String {
@@ -1183,6 +1188,9 @@ struct PWAChatBubbleShape: Shape {
     let bottomRightRadius: CGFloat
     var inflation: CGFloat = 0
 
+    /// The slider is gone; she settled on 3% for the default classic bubble.
+    static let defaultInflation: CGFloat = 0.03
+
     static func inflationPadding(_ inflation: CGFloat) -> CGFloat {
         inflation.isFinite ? 12 * min(max(inflation, 0), 1) : 0
     }
@@ -1312,7 +1320,122 @@ private struct EchoMessageBubbleShape: Shape {
                 bottomRightRadius: author == .human && isTail ? 5 : radius,
                 inflation: inflation
             ).path(in: rect)
+        case .jelly, .neat:
+            guard let spec = style.smoothSpec else { return Path(rect) }
+            return SmoothCornerBubbleShape(radius: spec.radius, smoothing: spec.smoothing).path(in: rect)
         }
+    }
+}
+
+/// Four equal corners with Figma-style corner smoothing: each circular arc is
+/// eased into its edges by a cubic, so curvature ramps up instead of jumping.
+/// The two sides of a corner are smoothed independently. When one edge is too
+/// short (a one-line bubble's height), only that side gives up smoothing; the
+/// radius itself never shrinks, so high smoothing doesn't turn the bubble boxy.
+struct SmoothCornerBubbleShape: Shape {
+    let radius: CGFloat
+    let smoothing: CGFloat
+
+    private struct Half {
+        let extent: CGFloat
+        let angle: CGFloat
+        let p0: CGPoint, p1: CGPoint, p2: CGPoint, p3: CGPoint
+    }
+
+    private struct Corner {
+        let radius: CGFloat
+        let entry: Half
+        let exit: Half
+    }
+
+    // Local frame of the top-right corner, entering along the top edge:
+    // u <= 0 runs toward the corner, v grows downward, arc centre at (-R, R).
+    private static func half(radius r: CGFloat, smoothing s: CGFloat) -> Half {
+        let angle = CGFloat.pi / 4 * s
+        let extent = (1 + s) * r
+        let arcStart = CGPoint(x: -r + r * sin(angle), y: r - r * cos(angle))
+        let c = r * tan(angle / 2) * cos(angle)
+        let b = max(0, (arcStart.x + extent - c) / 3)
+        return Half(
+            extent: extent,
+            angle: angle,
+            p0: CGPoint(x: -extent, y: 0),
+            p1: CGPoint(x: -extent + 2 * b, y: 0),
+            p2: CGPoint(x: -extent + 3 * b, y: 0),
+            p3: arcStart
+        )
+    }
+
+    private func corner(entryRoom: CGFloat, exitRoom: CGFloat) -> Corner? {
+        let r = min(max(0, radius), entryRoom, exitRoom)
+        guard r > 0.01 else { return nil }
+        let s = min(max(0, smoothing), 1)
+        return Corner(
+            radius: r,
+            entry: Self.half(radius: r, smoothing: min(s, max(0, entryRoom / r - 1))),
+            exit: Self.half(radius: r, smoothing: min(s, max(0, exitRoom / r - 1)))
+        )
+    }
+
+    /// Draws one corner, already reached at its entry point, through `map`
+    /// (a rotation/reflection taking the local frame to the real corner).
+    private func draw(_ c: Corner, into path: inout Path, map: (CGPoint) -> CGPoint) {
+        let r = c.radius
+        path.addCurve(to: map(c.entry.p3), control1: map(c.entry.p1), control2: map(c.entry.p2))
+
+        // Circular arc from -90°+entry to -exit, as a single cubic (span <= 90°).
+        let a0 = -CGFloat.pi / 2 + c.entry.angle
+        let a1 = -c.exit.angle
+        if a1 - a0 > 0.0001 {
+            let k = 4 / 3 * tan((a1 - a0) / 4) * r
+            let start = CGPoint(x: -r + r * cos(a0), y: r + r * sin(a0))
+            let end = CGPoint(x: -r + r * cos(a1), y: r + r * sin(a1))
+            path.addCurve(
+                to: map(end),
+                control1: map(CGPoint(x: start.x - k * sin(a0), y: start.y + k * cos(a0))),
+                control2: map(CGPoint(x: end.x + k * sin(a1), y: end.y - k * cos(a1)))
+            )
+        }
+
+        // The exit half is the entry construction mirrored across the diagonal,
+        // (u, v) -> (-v, -u), and walked backwards.
+        path.addCurve(
+            to: map(CGPoint(x: -c.exit.p0.y, y: -c.exit.p0.x)),
+            control1: map(CGPoint(x: -c.exit.p2.y, y: -c.exit.p2.x)),
+            control2: map(CGPoint(x: -c.exit.p1.y, y: -c.exit.p1.x))
+        )
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width, h = rect.height
+        let x0 = rect.minX, y0 = rect.minY
+        let topRight = corner(entryRoom: w / 2, exitRoom: h / 2)
+        let bottomRight = corner(entryRoom: h / 2, exitRoom: w / 2)
+        let bottomLeft = corner(entryRoom: w / 2, exitRoom: h / 2)
+        let topLeft = corner(entryRoom: h / 2, exitRoom: w / 2)
+        let entry = { (c: Corner?) in c?.entry.extent ?? 0 }
+        let exit = { (c: Corner?) in c?.exit.extent ?? 0 }
+
+        var path = Path()
+        path.move(to: CGPoint(x: x0 + exit(topLeft), y: y0))
+        path.addLine(to: CGPoint(x: x0 + w - entry(topRight), y: y0))
+        if let topRight {
+            draw(topRight, into: &path) { CGPoint(x: x0 + w + $0.x, y: y0 + $0.y) }
+        }
+        path.addLine(to: CGPoint(x: x0 + w, y: y0 + h - entry(bottomRight)))
+        if let bottomRight {
+            draw(bottomRight, into: &path) { CGPoint(x: x0 + w - $0.y, y: y0 + h + $0.x) }
+        }
+        path.addLine(to: CGPoint(x: x0 + entry(bottomLeft), y: y0 + h))
+        if let bottomLeft {
+            draw(bottomLeft, into: &path) { CGPoint(x: x0 - $0.x, y: y0 + h - $0.y) }
+        }
+        path.addLine(to: CGPoint(x: x0, y: y0 + entry(topLeft)))
+        if let topLeft {
+            draw(topLeft, into: &path) { CGPoint(x: x0 + $0.y, y: y0 - $0.x) }
+        }
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -2274,7 +2397,6 @@ struct StreamingReplyRow: View {
     let aiBubbleTextColor: Color
     let bubbleOpacity: Double
     let bubbleRadius: Double
-    let bubbleInflation: Double
     let bubbleWidthScale: Double
     let bubbleBorderWidth: Double
     let bubbleStyle: EchoBubbleStyle
@@ -2383,18 +2505,24 @@ struct StreamingReplyRow: View {
         bubbleShapeStyle == .upperTail && (bubbleStyle == .classic || bubbleStyle == .frosted)
     }
 
+    private var smoothSpec: SmoothBubbleSpec? {
+        bubbleStyle == .classic || bubbleStyle == .frosted ? bubbleShapeStyle.smoothSpec : nil
+    }
+
     private var bubbleHorizontalPadding: CGFloat {
+        if showsAIBubble, let smoothSpec { return smoothSpec.horizontalPadding }
         if isNest { return 10 }
         return usesTelegramShape ? 10 : 13
     }
 
     private var bubbleVerticalPadding: CGFloat {
+        if showsAIBubble, let smoothSpec { return smoothSpec.verticalPadding }
         let base: CGFloat = isNest ? (showsAIBubble ? 10 : 2) : (usesTelegramShape ? 8 : 9)
         return base + (showsAIBubble ? PWAChatBubbleShape.inflationPadding(effectiveBubbleInflation) : 0)
     }
 
     private var effectiveBubbleInflation: CGFloat {
-        bubbleStyle == .classic && bubbleShapeStyle == .standard ? CGFloat(bubbleInflation) : 0
+        bubbleStyle == .classic && bubbleShapeStyle == .standard ? PWAChatBubbleShape.defaultInflation : 0
     }
 }
 

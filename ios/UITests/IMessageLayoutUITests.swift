@@ -3,11 +3,12 @@ import XCTest
 final class IMessageLayoutUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    private func launch(theme: String = "mist", classic: Bool = false) -> XCUIApplication {
+    private func launch(theme: String = "mist", classic: Bool = false, composer: String = "original") -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--imessage-ui-review", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launchEnvironment["REVIEW_THEME"] = theme
         app.launchEnvironment["REVIEW_CLASSIC"] = classic ? "1" : "0"
+        app.launchEnvironment["REVIEW_COMPOSER"] = composer
         app.launch()
         return app
     }
@@ -17,6 +18,30 @@ final class IMessageLayoutUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    func testRestoredBubbleChoicesWithWeChatComposer() throws {
+        let app = launch(composer: "wechat")
+        XCTAssertTrue(app.buttons["chat.sessionStatus"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["chat.add"].exists)
+        XCTAssertTrue(app.buttons["chat.send"].exists)
+        XCTAssertTrue(app.buttons["录语音"].exists)
+        app.buttons["设置"].tap()
+        let appearance = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "外观与聊天")).firstMatch
+        XCTAssertTrue(appearance.waitForExistence(timeout: 5))
+        appearance.tap()
+        let jelly = app.buttons["软糖"]
+        for _ in 0..<8 {
+            if jelly.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(jelly.isHittable)
+        XCTAssertTrue(app.buttons["利落"].isHittable)
+        jelly.tap()
+        XCTAssertTrue(app.staticTexts["角给你看清楚"].waitForExistence(timeout: 5))
+        capture("10-restored-jelly-choice")
+        app.buttons["利落"].tap()
+        capture("11-restored-neat-choice")
     }
 
     func testReferenceProportionsAndComposerStates() throws {

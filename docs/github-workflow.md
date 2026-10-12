@@ -13,6 +13,17 @@ on `ios-reading-room` in `hazelnutsK/Tidal_Echo`. This private repository starts
 with a fresh history; the original repository and its working tree are preserved.
 The existing LICENSE is retained.
 
+On 2026-10-13 the complete current iOS source was reconciled with
+`hazelnutsK/Tidal_Echo` branch `ios-space-redesign`, commit
+`b86c2376fbb3643822b4c7528a1116c51e3de602`, from the clean worktree at
+`C:/Users/sxc/Tidal_Echo-space`. The old Windows installation was not the latest
+iOS source: its initial private snapshot lacked the jelly/neat bubble silhouettes,
+Melvin signature launch, new login/space pages, cached history tail and newer top
+fog. These features are retained alongside the new composer and font options.
+For future changes start from the private version that includes this integration
+and compare the latest successful build's commit before packaging. Do not replace
+iOS source with another old snapshot merely because it is in the live directory.
+
 Included: backend modules, API loop and bridges, channel plugin, PWA assets,
 native iOS source, offline tests and technical documentation.
 Excluded: credentials, actual persona, conversations, database files, uploads,

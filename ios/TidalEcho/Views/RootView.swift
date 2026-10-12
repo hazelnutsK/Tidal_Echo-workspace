@@ -36,7 +36,7 @@ struct RootView: View {
                     .zIndex(10)
             }
         }
-        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.34), value: showsLaunchView)
+        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.25), value: showsLaunchView)
         .task {
             NativeNotificationCenter.shared.fetchHandler = { [weak model] in
                 guard let model else { return false }
@@ -44,9 +44,9 @@ struct RootView: View {
             }
 
             async let bootstrapTask: Void = model.bootstrap()
-            // 手写开屏把 Aquila 写完、爱心落定、副标题收拢约 2.0s（她 2026-09-05 定的节奏）。
+            // 开屏把 Aquila 扫出来、爱心落定、停一小拍，约 1.15s（她 2026-09-27 定的节奏）。
             // bootstrap 更慢时开屏自然停在写完的样子，不会有突兀的收尾。
-            let minimumPresentation: Duration = reduceMotion ? .milliseconds(250) : .milliseconds(2150)
+            let minimumPresentation: Duration = reduceMotion ? .milliseconds(250) : LaunchView.handoff
             try? await Task.sleep(for: minimumPresentation)
             launchPresentationComplete = true
             await bootstrapTask
@@ -58,6 +58,7 @@ struct RootView: View {
             switch phase {
             case .background:
                 appLock.lockForBackground()
+                model.noteEnteredBackground()
             case .active:
                 guard launchPresentationComplete else { return }
                 if model.phase == .connected {

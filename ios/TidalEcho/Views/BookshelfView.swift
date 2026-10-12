@@ -3,6 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 /// 书架。她把 epub 放进来，点开就是阅读页；小克能看见的，只有她已经读过的部分。
+/// 2026-09-24 跟着空间改版：雾面底、上面一本大封面、下面一排书架，页边贴着我在那章写的一句。
 struct BookshelfView: View {
     @ObservedObject var model: AppModel
     @State private var books: [Book] = []
@@ -15,62 +16,48 @@ struct BookshelfView: View {
     @State private var noticeText: String?
     @State private var errorText: String?
     @State private var selectedBookID: Int?
+    @State private var stops: [Int: BookStop] = [:]
     @AppStorage("tidalEcho.bookMetadataOverrides") private var metadataOverridesData = Data()
 
-    private var palette: EchoPalette { model.theme.palette }
+    private var style: SpaceStyle { SpaceStyle(theme: model.theme) }
+    private var literary: EchoChatFont { SpaceStyle.literaryFont(for: model.chatFont) }
 
     var body: some View {
         ScrollView {
             if isLoading && books.isEmpty {
-                ProgressView().padding(.top, 60)
+                ProgressView()
+                    .padding(.top, 60)
+                    .frame(maxWidth: .infinity)
             } else if books.isEmpty {
                 emptyState
-            } else {
-                VStack(spacing: 0) {
-                    bookCarousel
-                    pageDots
-                        .padding(.top, 15)
+            } else if let selectedBook {
+                VStack(alignment: .leading, spacing: 22) {
+                    hero(selectedBook)
+                        .spaceEntrance(0)
 
-                    if let selectedBook {
-                        Text(selectedBook.title)
-                            .font(.custom("Songti SC", size: 23).weight(.semibold))
-                            .foregroundStyle(palette.text)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 28)
-                            .padding(.top, 17)
+                    if let note = stops[selectedBook.id]?.note {
+                        aside(note)
+                            .transition(.opacity)
+                            .spaceEntrance(1)
+                    }
 
-                        Text(selectedBook.author.isEmpty ? "佚名" : selectedBook.author)
-                            .font(.custom("Songti SC", size: 14))
-                            .foregroundStyle(palette.secondaryText)
-                            .lineLimit(1)
-                            .padding(.top, 7)
-
-                        BookProgressCard(book: selectedBook, palette: palette) {
-                            openedBook = selectedBook
+                    if books.count > 1 {
+                        VStack(alignment: .leading, spacing: 12) {
+                            SpaceLabel(text: "书架", style: style)
+                            shelf
                         }
-                        .padding(.horizontal, 22)
-                        .padding(.top, 32)
+                        .spaceEntrance(2)
                     }
                 }
-                .padding(.bottom, 30)
+                .padding(.horizontal, 20)
+                .padding(.top, 6)
+                .padding(.bottom, 36)
             }
         }
-        .background {
-            if model.theme == .mist {
-                Color.white.ignoresSafeArea()
-            } else {
-                palette.background.ignoresSafeArea()
-            }
-        }
-        .navigationTitle("")
+        .spacePage(style)
+        .navigationTitle("书房")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("书房")
-                    .font(.custom("Songti SC", size: 17).weight(.semibold))
-                    .foregroundStyle(palette.text)
-            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if let selectedBook {
                     Button { editingBook = selectedBook } label: {
@@ -82,11 +69,12 @@ struct BookshelfView: View {
                     ProgressView()
                 } else {
                     Button { showingFilePicker = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel("放一本书")
                 }
             }
         }
-        .tint(palette.accent)
         .task { await loadShelf() }
+        .task(id: stopKey) { await loadStop() }
         .refreshable { await loadShelf() }
         .sheet(isPresented: $showingFilePicker) {
             BookDocumentPicker(
@@ -139,14 +127,15 @@ struct BookshelfView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "books.vertical")
-                .font(.system(size: 40, weight: .light))
-                .foregroundStyle(palette.accent.opacity(0.7))
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(style.sub)
             Text("书架还是空的")
-                .font(.custom("Songti SC", size: 17).weight(.semibold))
+                .font(literary.font(size: 17, weight: .semibold))
             Text("右上角 ＋ 放一本 epub 进来，\n我们就从同一页开始读。")
-                .font(.custom("Songti SC", size: 15))
+                .font(literary.font(size: 15))
                 .multilineTextAlignment(.center)
-                .foregroundStyle(palette.secondaryText)
+                .lineSpacing(4)
+                .foregroundStyle(style.sub)
         }
         .padding(.top, 80)
         .frame(maxWidth: .infinity)
@@ -156,55 +145,151 @@ struct BookshelfView: View {
         books.first(where: { $0.id == selectedBookID }) ?? books.first
     }
 
-    private var bookCarousel: some View {
-        GeometryReader { geometry in
-            let coverWidth = min(geometry.size.width * 0.64, 270)
-            ScrollView(.horizontal) {
-                LazyHStack(spacing: 22) {
-                    ForEach(books) { book in
-                        Button { openedBook = book } label: {
-                            BookCoverPage(book: book, model: model, palette: palette)
-                                .frame(width: coverWidth)
-                        }
-                        .buttonStyle(.plain)
-                        .id(book.id)
-                        .contextMenu {
-                            Button { editingBook = book } label: {
-                                Label("修改书名与作者", systemImage: "pencil")
-                            }
-                            Button(role: .destructive) { pendingDeletion = book } label: {
-                                Label("从书架撤掉", systemImage: "trash")
-                            }
-                        }
-                    }
-                }
-                .scrollTargetLayout()
-            }
-            .contentMargins(.horizontal, max(22, (geometry.size.width - coverWidth) / 2), for: .scrollContent)
-            .scrollIndicators(.hidden)
-            .scrollTargetBehavior(.viewAligned(limitBehavior: .always))
-            .scrollPosition(id: $selectedBookID)
-        }
-        .frame(height: 350)
-        .padding(.top, 18)
-    }
+    // MARK: 在读的那本
 
-    private var pageDots: some View {
-        HStack(spacing: 6) {
-            ForEach(books) { book in
-                Capsule(style: .continuous)
-                    .fill(book.id == selectedBook?.id ? palette.text.opacity(0.74) : palette.secondaryText.opacity(0.24))
-                    .frame(width: book.id == selectedBook?.id ? 18 : 5, height: 5)
-                    .animation(.easeOut(duration: 0.18), value: selectedBookID)
+    private func hero(_ book: Book) -> some View {
+        VStack(spacing: 18) {
+            Button { openedBook = book } label: {
+                BookCover(book: book, model: model, style: style, literary: literary, large: true)
+                    .containerRelativeFrame(.horizontal) { width, _ in min(240, width * 0.62) }
             }
+            .buttonStyle(SpacePressStyle())
+            .accessibilityLabel("打开《\(book.title)》")
+            .contextMenu { menu(for: book) }
+
+            VStack(spacing: 8) {
+                BookReadLine(progress: min(1, max(0, book.percent / 100)), style: style)
+                    .id(book.id)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(stopText(book))
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(progressText(book))
+                        .monospacedDigit()
+                }
+                .font(.system(size: 12.5))
+                .foregroundStyle(style.sub)
+            }
+
+            Button { openedBook = book } label: {
+                Text(book.percent > 0 ? "继续读" : "开始读")
+                    .font(literary.font(size: 14, weight: .semibold))
+                    .foregroundStyle(style.onAccent)
+                    .padding(.horizontal, 26)
+                    .frame(height: 38)
+                    .background(style.accent, in: Capsule())
+            }
+            .buttonStyle(SpacePressStyle())
         }
         .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("第 \((books.firstIndex(where: { $0.id == selectedBook?.id }) ?? 0) + 1) 本，共 \(books.count) 本")
+        .padding(.top, 6)
+    }
+
+    private func stopText(_ book: Book) -> String {
+        if let heading = stops[book.id]?.heading, !heading.isEmpty { return "停在 \(heading)" }
+        return "第 \(max(1, book.curChapter + 1)) 章 · 共 \(max(1, book.totalChapters)) 章"
+    }
+
+    private func progressText(_ book: Book) -> String {
+        let percent = book.percent >= 10 || book.percent == 0
+            ? String(format: "%.0f%%", book.percent)
+            : String(format: "%.1f%%", book.percent)
+        return book.annotations > 0 ? "\(percent) · \(book.annotations) 处批注" : percent
+    }
+
+    /// 我在她停下那章写过的最后一句，像贴在书页边上的便签。
+    private func aside(_ note: BookAnnotation) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(note.note.trimmingCharacters(in: .whitespacesAndNewlines))
+                .font(literary.font(size: 14))
+                .lineSpacing(6)
+                .lineLimit(5)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Altair · 贴在书页边上")
+                .font(.system(size: 11.5))
+                .foregroundStyle(style.faint)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .spaceGlass(style, radius: 22)
+    }
+
+    // MARK: 书架
+
+    private var shelf: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14, alignment: .bottom), count: 3), spacing: 18) {
+            ForEach(Array(books.enumerated()), id: \.element.id) { index, book in
+                let current = book.id == selectedBook?.id
+                Button {
+                    withAnimation(.easeInOut(duration: 0.3)) { selectedBookID = book.id }
+                } label: {
+                    VStack(spacing: 8) {
+                        BookCover(book: book, model: model, style: style, literary: literary, large: false, tone: index)
+                            .overlay {
+                                if current {
+                                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                        .strokeBorder(style.accent, lineWidth: 1.5)
+                                        .padding(-4)
+                                }
+                            }
+                        Text(current ? "在读" : (book.author.isEmpty ? "佚名" : book.author))
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(current ? style.ink : style.sub)
+                            .lineLimit(1)
+                    }
+                }
+                .buttonStyle(SpacePressStyle())
+                .accessibilityLabel("《\(book.title)》")
+                .accessibilityAddTraits(current ? .isSelected : [])
+                .contextMenu { menu(for: book) }
+            }
+        }
+        .sensoryFeedback(.selection, trigger: selectedBookID)
+    }
+
+    @ViewBuilder private func menu(for book: Book) -> some View {
+        Button { openedBook = book } label: {
+            Label("打开", systemImage: "book")
+        }
+        Button { editingBook = book } label: {
+            Label("修改书名与作者", systemImage: "pencil")
+        }
+        Button(role: .destructive) { pendingDeletion = book } label: {
+            Label("从书架撤掉", systemImage: "trash")
+        }
+    }
+
+    // MARK: 数据
+
+    private var stopKey: String {
+        guard let book = selectedBook else { return "" }
+        return "\(book.id)|\(book.curChapter)|\(book.annotations)"
+    }
+
+    /// 停下那一章的章名和我在那章留下的最后一句。只读，不动她的进度。
+    @MainActor
+    private func loadStop() async {
+        guard let book = selectedBook, !SpaceReview.isActive else { return }
+        guard let chapter = try? await model.bookChapter(bookID: book.id, index: max(0, book.curChapter)) else { return }
+        if Task.isCancelled { return }
+        let note = chapter.annotations
+            .filter { $0.isAI && $0.hasNote }
+            .max(by: { $0.id < $1.id })
+        withAnimation(.easeOut(duration: 0.25)) {
+            stops[book.id] = BookStop(heading: chapter.chapterTitle.trimmingCharacters(in: .whitespacesAndNewlines), note: note)
+        }
     }
 
     @MainActor
     private func loadShelf() async {
+        if SpaceReview.isActive {
+            books = BookReviewSamples.books
+            selectedBookID = books.first?.id
+            stops = BookReviewSamples.stops
+            isLoading = false
+            return
+        }
         isLoading = true
         defer { isLoading = false }
         do {
@@ -305,6 +390,34 @@ struct BookshelfView: View {
     }
 }
 
+private struct BookStop {
+    let heading: String
+    let note: BookAnnotation?
+}
+
+/// CI 截图用的样例书架。
+private enum BookReviewSamples {
+    static var books: [Book] {
+        [
+            Book(id: 1, title: "此生，你我皆短暂灿烂 = On Earth We're Briefly Gorgeous", author: "王鸥行", cover: "",
+                 totalChapters: 24, totalChars: 180_000, curChapter: 0, curOffset: 0, furthestChapter: 0,
+                 furthestOffset: 0, percent: 2, annotations: 3, createdAt: "2026-08-13T10:00:00"),
+            Book(id: 2, title: "倾城之恋", author: "张爱玲", cover: "", totalChapters: 8, totalChars: 30_000,
+                 curChapter: 0, curOffset: 0, furthestChapter: 0, furthestOffset: 0, percent: 0, annotations: 0,
+                 createdAt: "2026-08-20T10:00:00"),
+            Book(id: 3, title: "金阁寺", author: "三岛由纪夫", cover: "", totalChapters: 10, totalChars: 120_000,
+                 curChapter: 0, curOffset: 0, furthestChapter: 0, furthestOffset: 0, percent: 0, annotations: 0,
+                 createdAt: "2026-09-01T10:00:00")
+        ]
+    }
+
+    static var stops: [Int: BookStop] {
+        let json = #"{"id":9,"book_id":1,"chapter_idx":0,"start_off":0,"end_off":4,"quote":"目次","note":"你上次停在目次，我也停在那儿，后面一个字都没偷看。","author":"ai","reply_to":null,"created_at":"2026-08-13T10:00:00"}"#
+        let note = try? JSONDecoder().decode(BookAnnotation.self, from: Data(json.utf8))
+        return [1: BookStop(heading: "目次", note: note)]
+    }
+}
+
 private struct BookDocumentPicker: UIViewControllerRepresentable {
     let contentTypes: [UTType]
     let onPick: (URL) -> Void
@@ -370,6 +483,19 @@ private extension Book {
             createdAt: createdAt
         )
     }
+
+    /// 「此生，你我皆短暂灿烂 = On Earth We're Briefly Gorgeous」拆成中文书名和外文副题。
+    var splitTitle: (main: String, original: String?) {
+        for separator in [" = ", "（", " ("] {
+            if let range = title.range(of: separator) {
+                let main = title[..<range.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+                let rest = title[range.upperBound...]
+                    .trimmingCharacters(in: CharacterSet(charactersIn: " ）)").union(.whitespacesAndNewlines))
+                if !main.isEmpty { return (main, rest.isEmpty ? nil : rest) }
+            }
+        }
+        return (title, nil)
+    }
 }
 
 private struct BookMetadataEditor: View {
@@ -415,123 +541,151 @@ private struct BookMetadataEditor: View {
     }
 }
 
-private struct BookCoverPage: View {
+/// 一本书的封面。有图用图；没有图就是一块素色的书壳，竖排书名。
+private struct BookCover: View {
     let book: Book
     @ObservedObject var model: AppModel
-    let palette: EchoPalette
+    let style: SpaceStyle
+    let literary: EchoChatFont
+    let large: Bool
+    var tone = 0
+
+    private var radius: CGFloat { large ? 10 : 7 }
 
     var body: some View {
-        ZStack {
-            if !book.cover.isEmpty, let request = model.authenticatedRequest(path: book.cover) {
-                BookRemoteImage(request: request, contentMode: .fit)
-                    .background(Color.white.opacity(0.76))
-            } else {
-                ZStack {
-                    LinearGradient(
-                        colors: [palette.accent.opacity(0.24), palette.backgroundTop.opacity(0.94)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    VStack(spacing: 16) {
-                        Image(systemName: "book.closed")
-                            .font(.system(size: 27, weight: .light))
-                            .foregroundStyle(palette.secondaryText)
-                        Text(book.title)
-                            .font(.custom("Songti SC", size: 20).weight(.semibold))
-                            .foregroundStyle(palette.text)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(5)
-                    }
-                    .padding(24)
+        // 尺寸只由书壳定，图和字都挂在 overlay 里，填充的图撑不大它
+        Rectangle()
+            .fill(shellColor)
+            .aspectRatio(2 / 3, contentMode: .fit)
+            .overlay {
+                if !book.cover.isEmpty, let request = model.authenticatedRequest(path: book.cover) {
+                    BookRemoteImage(request: request, contentMode: .fill, placeholder: .clear)
+                } else {
+                    plainFace
                 }
             }
+        .clipShape(UnevenRoundedRectangle(
+            topLeadingRadius: radius * 0.4,
+            bottomLeadingRadius: radius * 0.4,
+            bottomTrailingRadius: radius,
+            topTrailingRadius: radius,
+            style: .continuous
+        ))
+        .overlay(alignment: .leading) {
+            // 书脊那一道暗
+            Rectangle()
+                .fill(Color.black.opacity(0.16))
+                .frame(width: large ? 6 : 4)
         }
-        .frame(height: 338)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.white.opacity(0.56), lineWidth: 0.7))
-        .shadow(color: Color.black.opacity(0.13), radius: 17, y: 9)
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .accessibilityLabel("打开《\(book.title)》")
+        .shadow(color: Color.black.opacity(large ? 0.32 : 0.14), radius: large ? 20 : 8, y: large ? 16 : 6)
+    }
+
+    /// 墨白里是深色书壳，夜港里反过来是浅色。
+    private var shellColor: Color {
+        let dark = style.isDark
+        switch tone % 3 {
+        case 0: return dark ? Color(hex: 0xE6E5E0) : Color(hex: 0x2A2A29)
+        case 1: return dark ? Color(hex: 0x4A4A4D) : Color(hex: 0x8C8B86)
+        default: return dark ? Color(hex: 0x6B6B6E) : Color(hex: 0xA9A8A3)
+        }
+    }
+
+    private var faceInk: Color {
+        let lightShell = style.isDark ? tone % 3 == 0 : false
+        return lightShell ? Color(hex: 0x141414) : Color(hex: 0xF4F4F1)
+    }
+
+    @ViewBuilder private var plainFace: some View {
+        let parts = book.splitTitle
+        if large {
+            // 竖排一列大约放得下 300pt：书名长就把字缩小，再长就截断
+            let main = parts.main.count > 18 ? String(parts.main.prefix(17)) + "…" : parts.main
+            let size = min(21, max(13, 300 / Double(max(1, main.count)) / 1.3))
+            ZStack(alignment: .bottomLeading) {
+                HStack(alignment: .top) {
+                    VerticalText(text: main, font: literary.font(size: size, weight: .semibold), tracking: 3.5)
+                    Spacer(minLength: 8)
+                    if !book.author.isEmpty {
+                        VerticalText(text: book.author, font: .system(size: 11), tracking: 3)
+                            .opacity(0.75)
+                            .frame(maxHeight: .infinity, alignment: .bottom)
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 22)
+                if let original = parts.original {
+                    Text(original)
+                        .font(SpaceFont.display(13, italic: true))
+                        .lineSpacing(1)
+                        .opacity(0.7)
+                        .frame(maxWidth: 110, alignment: .leading)
+                        .padding(18)
+                }
+            }
+            .foregroundStyle(faceInk)
+        } else {
+            VerticalText(text: String(parts.main.prefix(6)), font: literary.font(size: 13, weight: .semibold), tracking: 2.5)
+                .foregroundStyle(faceInk)
+                .padding(.top, 12)
+                .frame(maxHeight: .infinity, alignment: .top)
+        }
     }
 }
 
-private struct BookProgressCard: View {
-    let book: Book
-    let palette: EchoPalette
-    let onContinue: () -> Void
+/// 竖排：一个字一行。书名不长，比 UIKit 的竖排省事。
+private struct VerticalText: View {
+    let text: String
+    let font: Font
+    var tracking: CGFloat = 2
 
     var body: some View {
-        VStack(spacing: 15) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(chapterText)
-                    .font(.custom("Songti SC", size: 15).weight(.semibold))
-                    .foregroundStyle(palette.text)
-                Spacer()
-                Text("已读 \(percentText)")
-                    .font(.custom("Songti SC", size: 13))
-                    .foregroundStyle(palette.secondaryText)
-            }
-
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(palette.secondaryText.opacity(0.13))
-                    Capsule()
-                        .fill(palette.text.opacity(0.62))
-                        .frame(width: geometry.size.width * CGFloat(progress))
-                }
-            }
-            .frame(height: 4)
-
-            HStack {
-                Text("共读 · \(book.annotations) 处批注")
-                    .font(.custom("Songti SC", size: 13))
-                    .foregroundStyle(palette.secondaryText)
-                Spacer()
-                Button(action: onContinue) {
-                    Text(book.percent > 0 ? "继续阅读" : "开始阅读")
-                        .font(.custom("Songti SC", size: 14).weight(.semibold))
-                        .foregroundStyle(palette.background)
-                        .padding(.horizontal, 22)
-                        .frame(height: 42)
-                        .background(palette.text.opacity(0.82), in: Capsule())
-                }
-                .buttonStyle(.plain)
+        VStack(spacing: tracking) {
+            ForEach(Array(text.enumerated()), id: \.offset) { _, character in
+                Text(String(character))
+                    .font(font)
+                    .rotationEffect(character.isASCII && character.isLetter ? .degrees(90) : .zero)
             }
         }
-        .padding(20)
-        .background(
-            palette.composer.opacity(0.72),
-            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.42), lineWidth: 0.7)
-        )
-        .shadow(color: Color.black.opacity(0.06), radius: 16, y: 7)
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
     }
+}
 
-    private var progress: Double {
-        min(1, max(0, book.percent / 100))
-    }
+/// 进度那根细线：进页面时从零走到她读到的地方。
+private struct BookReadLine: View {
+    let progress: Double
+    let style: SpaceStyle
+    @State private var shown = false
 
-    private var percentText: String {
-        String(format: "%.1f%%", book.percent)
-    }
-
-    private var chapterText: String {
-        "第 \(max(1, book.curChapter + 1)) 章 · 共 \(max(1, book.totalChapters)) 章"
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(style.hair)
+                Capsule()
+                    .fill(style.accent)
+                    .frame(width: max(2, geometry.size.width * CGFloat(shown ? progress : 0)))
+            }
+        }
+        .frame(height: 2)
+        .onAppear {
+            withAnimation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 1.1).delay(0.35)) { shown = true }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("已读 \(Int(progress * 100))%")
     }
 }
 
 struct BookRemoteImage: View {
     let request: URLRequest
     var contentMode: ContentMode = .fill
+    var placeholder: Color = Color.secondary.opacity(0.08)
     @State private var image: UIImage?
     @State private var failed = false
 
     var body: some View {
         ZStack {
-            Color.secondary.opacity(0.08)
+            placeholder
             if let image {
                 Image(uiImage: image)
                     .resizable()
