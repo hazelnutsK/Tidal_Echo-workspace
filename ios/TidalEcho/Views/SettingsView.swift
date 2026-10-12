@@ -601,6 +601,18 @@ private struct AppearanceSettingsView: View {
                     .foregroundStyle(palette.secondaryText)
             }
 
+            Section("输入栏") {
+                Picker("样式", selection: $model.composerStyle) {
+                    ForEach(ComposerStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text("微信式磨砂：底部贴边，在线绿点放在输入框右侧，点它可以切换对话窗口。")
+                    .font(.footnote)
+                    .foregroundStyle(palette.secondaryText)
+            }
+
             Section("文字") {
                 Picker("聊天字体", selection: $model.chatFont) {
                     ForEach(EchoChatFont.allCases) { font in
@@ -952,6 +964,7 @@ private struct AppearanceSettingsView: View {
 
             Button("恢复主题气泡配色") { model.resetBubbleColors() }
             Button("恢复外观默认值") {
+                model.composerStyle = .original
                 model.chatFont = .system
                 model.fontScale = 1
                 model.showsAIAvatar = true

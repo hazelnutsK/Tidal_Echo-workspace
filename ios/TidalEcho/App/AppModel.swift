@@ -48,6 +48,9 @@ final class AppModel: ObservableObject {
     @Published var chatLayoutStyle: ChatLayoutStyle {
         didSet { UserDefaults.standard.set(chatLayoutStyle.rawValue, forKey: Keys.chatLayoutStyle) }
     }
+    @Published var composerStyle: ComposerStyle {
+        didSet { UserDefaults.standard.set(composerStyle.rawValue, forKey: Keys.composerStyle) }
+    }
     @Published var chatFont: EchoChatFont {
         didSet { UserDefaults.standard.set(chatFont.rawValue, forKey: Keys.chatFont) }
     }
@@ -191,6 +194,7 @@ final class AppModel: ObservableObject {
         static let relaySecret = "relaySecret"
         static let theme = "tidalEcho.theme"
         static let chatLayoutStyle = "tidalEcho.chatLayoutStyle"
+        static let composerStyle = "tidalEcho.composerStyle"
         static let chatFont = "tidalEcho.chatFont"
         static let fontScale = "tidalEcho.fontScale"
         static let showsAIAvatar = "tidalEcho.showsAIAvatar"
@@ -262,6 +266,7 @@ final class AppModel: ObservableObject {
         let shouldMigrateNestPreset = initialTheme == .nest && !defaults.bool(forKey: Keys.nestPresetV1)
         theme = initialTheme
         chatLayoutStyle = ChatLayoutStyle(rawValue: defaults.string(forKey: Keys.chatLayoutStyle) ?? "") ?? .classic
+        composerStyle = ComposerStyle(rawValue: defaults.string(forKey: Keys.composerStyle) ?? "") ?? .original
         let rawFont = defaults.string(forKey: Keys.chatFont) ?? EchoChatFont.system.rawValue
         chatFont = EchoChatFont(rawValue: rawFont) ?? .system
         fontScale = defaults.object(forKey: Keys.fontScale) == nil ? 1 : defaults.double(forKey: Keys.fontScale)

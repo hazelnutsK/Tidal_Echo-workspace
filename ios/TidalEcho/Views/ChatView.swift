@@ -1987,7 +1987,9 @@ private struct ComposerView: View {
                 }
             }
 
-            if usesIMessageLayout {
+            if usesWeChatComposer {
+                weChatComposer
+            } else if usesIMessageLayout {
                 if !model.bundledMessageParts.isEmpty {
                     Button { Task { await model.sendBundledMessages() } } label: {
                         Label("让 AI 回复这 \(model.bundledMessageParts.count) 条", systemImage: "paperplane")
@@ -2108,13 +2110,18 @@ private struct ComposerView: View {
                 }
             }
         }
-        .padding(usesIMessageLayout ? 0 : (isNest ? 13 : 10))
+        .padding(.horizontal, usesWeChatComposer ? 10 : (usesIMessageLayout ? 0 : (isNest ? 13 : 10)))
+        .padding(.vertical, usesWeChatComposer ? 8 : (usesIMessageLayout ? 0 : (isNest ? 13 : 10)))
         .background {
-            if !usesIMessageLayout { composerContainerGlass }
+            if usesWeChatComposer {
+                weChatDockBackground
+            } else if !usesIMessageLayout {
+                composerContainerGlass
+            }
         }
-        .padding(.horizontal, usesIMessageLayout ? iMessageMetrics.composerInset : (isNest ? 14 : 12))
-        .padding(.top, usesIMessageLayout ? 6 : (isNest ? 4 : 7))
-        .padding(.bottom, usesIMessageLayout ? 4 : (isNest ? 5 : 7))
+        .padding(.horizontal, usesWeChatComposer ? 0 : (usesIMessageLayout ? iMessageMetrics.composerInset : (isNest ? 14 : 12)))
+        .padding(.top, usesWeChatComposer ? 0 : (usesIMessageLayout ? 6 : (isNest ? 4 : 7)))
+        .padding(.bottom, usesWeChatComposer ? 0 : (usesIMessageLayout ? 4 : (isNest ? 5 : 7)))
         .task { await loadBrain() }
         .onDisappear { recorder.cancel() }
         .onChange(of: photoItems) { items in
@@ -2176,6 +2183,53 @@ private struct ComposerView: View {
     }
 
     private var usesIMessageLayout: Bool { model.chatLayoutStyle == .imessage }
+
+    private var usesWeChatComposer: Bool { model.composerStyle == .wechat }
+
+    private var weChatComposer: some View {
+        WeChatComposerBar(
+            text: $draftText, focus: $isDraftFocused,
+            palette: palette,
+            font: model.chatFont.font(size: 15 * model.fontScale, numericWeight: model.chatWeight),
+            isDark: model.theme == .harbor,
+            isOnline: model.isStreamConnected, sessionLabel: brainLabel,
+            uploading: model.isUploading,
+            isRecording: recorder.isRecording, voiceDisabled: model.isUploadingVoice,
+            isSending: model.isSendingBundledMessage, canSend: canSend,
+            sendIcon: sendButtonIcon,
+            sendLabel: sendButtonAccessibilityLabel, sendHint: sendButtonAccessibilityHint,
+            onAttachments: {
+                isDraftFocused = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    showingAttachmentMenu = true
+                }
+            },
+            onFaces: {
+                isDraftFocused = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    showingKaomojiDrawer = true
+                }
+            },
+            onSessions: onShowSessions,
+            onVoice: { toggleRecording() },
+            onSend: { send() }
+        )
+    }
+
+    private var weChatDockBackground: some View {
+        Rectangle()
+            .fill(.ultraThinMaterial)
+            .overlay {
+                Rectangle().fill(palette.composer.opacity(model.theme == .harbor ? 0.10 : 0.16))
+            }
+            .overlay(alignment: .top) {
+                Rectangle().fill(palette.hairline).frame(height: 0.5)
+            }
+            // Extend only the material through the home-indicator safe area.
+            // Content keeps the keyboard-safe layout and adds no blank spacer.
+            .ignoresSafeArea(.container, edges: .bottom)
+            .allowsHitTesting(false)
+    }
 
     private var iMessageMetrics: IMessageLayoutMetrics {
         IMessageLayoutMetrics(viewportWidth: viewportWidth)
@@ -2363,7 +2417,7 @@ private struct ComposerView: View {
     private var sendButtonIcon: String {
         if !hasCurrentComposerContent && !model.bundledMessageParts.isEmpty { return "paperplane.fill" }
         if model.aiReplyTiming == .bundled { return "tray.full.fill" }
-        return isNest ? "waveform" : "arrow.up"
+        return isNest && !usesWeChatComposer ? "waveform" : "arrow.up"
     }
 
     private var sendButtonAccessibilityLabel: String {

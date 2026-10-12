@@ -24,6 +24,19 @@ enum ChatLayoutStyle: String, CaseIterable, Identifiable {
     }
 }
 
+enum ComposerStyle: String, CaseIterable, Identifiable {
+    case original
+    case wechat
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .original: return "原有"
+        case .wechat: return "微信式磨砂"
+        }
+    }
+}
+
 enum EchoBubbleStyle: String, Codable, CaseIterable, Identifiable {
     case classic
     case frosted
