@@ -98,12 +98,29 @@ jobs:
             xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "NativePreviews/wechat-$font.png"
           done
           xcrun simctl terminate "$REVIEW_DEVICE_ID" com.tidalecho.personal
+          APP_DATA=$(xcrun simctl get_app_container "$REVIEW_DEVICE_ID" com.tidalecho.personal data)
+          cp "$APP_DATA/Documents/regional-font-review.json" NativePreviews/
+
+      - name: Verify regional glyph rendering
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          fonts = json.loads(Path("NativePreviews/regional-font-review.json").read_text())
+          print("Resolved Han fonts:", fonts)
+          assert "Hiragino" in fonts["japanese"] or "HiraKaku" in fonts["japanese"], fonts
+          assert "PingFangHK" in fonts["hongKong"], fonts
+          assert fonts["japanese"] != fonts["hongKong"], fonts
+          assert Path("NativePreviews/wechat-japanese.png").read_bytes() != Path("NativePreviews/wechat-hongKong.png").read_bytes(), "Regional previews are identical"
+          PY
 
       - name: Upload native previews
         uses: actions/upload-artifact@v4
         with:
           name: TidalEcho-native-previews
-          path: ios/NativePreviews/*.png
+          path: ios/NativePreviews/*
 
       - name: Build unsigned device app
         if: ${{ !inputs.native_review_only }}

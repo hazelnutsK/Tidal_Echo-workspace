@@ -1,4 +1,5 @@
 #if DEBUG
+import CoreText
 import SwiftUI
 import UIKit
 
@@ -7,6 +8,7 @@ enum IMessageReviewFixture {
     static func makeModel() -> AppModel {
         let model = AppModel()
         let env = ProcessInfo.processInfo.environment
+        writeRegionalFontReview()
         model.theme = EchoTheme(rawValue: env["REVIEW_THEME"] ?? "mist") ?? .mist
         model.chatLayoutStyle = env["REVIEW_CLASSIC"] == "1" ? .classic : .imessage
         model.composerStyle = ComposerStyle(rawValue: env["REVIEW_COMPOSER"] ?? "original") ?? .original
@@ -44,6 +46,22 @@ enum IMessageReviewFixture {
                         author: entry.0, kind: "text", text: entry.1)
         }
         return model
+    }
+
+    /// The CI simulator verifies that its installed fonts actually resolve the
+    /// same Han character to distinct regional faces, beyond just compiling.
+    private static func writeRegionalFontReview() {
+        let sample = "骨" as CFString
+        var records: [String: String] = [:]
+        for choice in [EchoChatFont.system, .japanese, .hongKong] {
+            let font = choice.uiFont(size: 17, numericWeight: 400)
+            let resolved = CTFontCreateForString(font as CTFont, sample, CFRange(location: 0, length: 1))
+            records[choice.rawValue] = CTFontCopyPostScriptName(resolved) as String
+        }
+        if let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+           let data = try? JSONSerialization.data(withJSONObject: records, options: [.sortedKeys, .prettyPrinted]) {
+            try? data.write(to: directory.appendingPathComponent("regional-font-review.json"), options: .atomic)
+        }
     }
 
     private static func avatar() -> UIImage {

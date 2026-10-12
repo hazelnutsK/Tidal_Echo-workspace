@@ -281,25 +281,30 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
     private static func regionalSystemFont(size: CGFloat, numericWeight: Double, language: String) -> UIFont {
         let key = "\(language):\(size):\(numericWeight)" as NSString
         if let cached = regionalFontCache.object(forKey: key) { return cached }
-        let base = UIFont.systemFont(ofSize: size, weight: continuousWeight(numericWeight))
-        // Keep system Latin letters and digits. For missing CJK characters,
-        // request the same language-specific fallback ordering used by iOS.
-        // Simplified Chinese remains available for characters absent in Japanese.
-        let languages = [language, "zh-Hans"] as CFArray
-        guard let descriptors = CTFontCopyDefaultCascadeListForLanguages(base as CTFont, languages)
-                as? [CTFontDescriptor] else { return base }
-        let cascade = descriptors.compactMap { descriptor -> UIFontDescriptor? in
-            guard let attributes = CTFontDescriptorCopyAttributes(descriptor) as? [String: Any] else { return nil }
-            // Core Text and UIKit share the descriptor attribute names. Preserve
-            // the returned weight/variation attributes instead of copying names
-            // alone, which would flatten every weight to the regular face.
-            let uiAttributes = Dictionary(uniqueKeysWithValues: attributes.map {
-                (UIFontDescriptor.AttributeName(rawValue: $0.key), $0.value)
-            })
-            return UIFontDescriptor(fontAttributes: uiAttributes)
+        // A system UI font can apply its own CJK fallback before a supplied
+        // cascade. Choose the regional CJK face itself so shared Han characters
+        // use that region's outlines even while the app locale stays zh-Hans.
+        let names: [String]
+        if language == "ja" {
+            names = numericWeight >= 550
+                ? ["HiraginoSans-W6", "HiraKakuProN-W6", "HiraginoSans-W3"]
+                : ["HiraginoSans-W3", "HiraKakuProN-W3", "HiraginoSans-W6"]
+        } else {
+            let face: String
+            switch numericWeight {
+            case ..<150: face = "Ultralight"
+            case ..<250: face = "Thin"
+            case ..<350: face = "Light"
+            case ..<450: face = "Regular"
+            case ..<550: face = "Medium"
+            default: face = "Semibold"
+            }
+            names = ["PingFangHK-\(face)", "PingFangHK-Regular"]
         }
-        guard !cascade.isEmpty else { return base }
-        let font = UIFont(descriptor: base.fontDescriptor.addingAttributes([.cascadeList: cascade]), size: size)
+        // iOS supplies fallback fonts for Simplified Chinese characters absent
+        // from the selected face, without converting or translating the text.
+        let font = names.lazy.compactMap { UIFont(name: $0, size: size) }.first
+            ?? UIFont.systemFont(ofSize: size, weight: continuousWeight(numericWeight))
         regionalFontCache.setObject(font, forKey: key)
         return font
     }
