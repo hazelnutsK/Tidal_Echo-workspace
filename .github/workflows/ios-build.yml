@@ -7,10 +7,6 @@ on:
         description: Run native UI review without rebuilding the device package
         type: boolean
         default: false
-  push:
-    paths:
-      - "ios/**"
-      - ".github/workflows/ios-build.yml"
 
 permissions:
   contents: read
@@ -95,6 +91,11 @@ jobs:
             SIMCTL_CHILD_REVIEW_THEME="$theme" xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --imessage-ui-review
             sleep 4
             xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "NativePreviews/$theme.png"
+          done
+          for font in system japanese hongKong; do
+            SIMCTL_CHILD_REVIEW_THEME=mist SIMCTL_CHILD_REVIEW_COMPOSER=wechat SIMCTL_CHILD_REVIEW_FONT="$font" xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --imessage-ui-review
+            sleep 4
+            xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "NativePreviews/wechat-$font.png"
           done
           xcrun simctl terminate "$REVIEW_DEVICE_ID" com.tidalecho.personal
 

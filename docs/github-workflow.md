@@ -35,8 +35,18 @@ git push -u origin cc/your-task
 Do not reset or overwrite somebody else's working tree. Keep new tasks on separate
 branches. The VPS deploy key is scoped to this repository. Existing account login,
 residential proxy, chat session, memory and channel configuration are separate.
-GitHub Actions in this development repository are disabled initially; iOS builds
-can be enabled deliberately when needed.
+The owner requires every completed Tidal Echo source change to be committed and
+pushed promptly to this private repository, unless she explicitly asks to hold
+the push. Do not leave completed changes only on the local computer.
+
+Source synchronization and compilation are separate. GitHub Actions are enabled
+for deliberate iOS builds, and `iOS Build` runs only through `workflow_dispatch`.
+An instruction to hold compilation does not hold the source push. When a build is
+requested, dispatch it for the pushed task branch and check its result:
+
+```bash
+gh workflow run ios-build.yml -R hazelnutsK/Tidal_Echo-workspace --ref cc/your-task
+```
 
 ## Applying a change to Windows
 

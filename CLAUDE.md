@@ -11,6 +11,11 @@ switching branches; preserve existing changes. Make the requested change, run
 relevant offline checks, commit it and push that branch to this private origin.
 Report the branch, commit, changed files and validation results.
 
+The owner requires timely private GitHub synchronization for future changes.
+Source pushes do not trigger iOS builds; dispatch `iOS Build` manually when
+requested. If she says to hold compilation, still push source unless she also
+explicitly asks to hold the push.
+
 Do not copy credentials, user conversations, persona files, databases or uploads
 into Git. Do not start companion channel consumers from this checkout. The
 existing chat channel is running separately; starting another one causes duplicate
