@@ -101,6 +101,13 @@ final class AppModel: ObservableObject {
     @Published var bubbleWidthScale: Double {
         didSet { UserDefaults.standard.set(bubbleWidthScale, forKey: Keys.bubbleWidthScale) }
     }
+    /// 气泡内边距在主题基准值上的增减（pt），0＝主题原样。
+    @Published var bubblePaddingX: Double {
+        didSet { UserDefaults.standard.set(bubblePaddingX, forKey: Keys.bubblePaddingX) }
+    }
+    @Published var bubblePaddingY: Double {
+        didSet { UserDefaults.standard.set(bubblePaddingY, forKey: Keys.bubblePaddingY) }
+    }
     @Published var bubbleBorderWidth: Double {
         didSet { UserDefaults.standard.set(bubbleBorderWidth, forKey: Keys.bubbleBorderWidth) }
     }
@@ -218,6 +225,8 @@ final class AppModel: ObservableObject {
         static let showsHumanAvatar = "tidalEcho.showsHumanAvatar"
         static let showsClawdPet = "tidalEcho.showsClawdPet"
         static let bubbleWidthScale = "tidalEcho.bubbleWidthScale"
+        static let bubblePaddingX = "tidalEcho.bubblePaddingX"
+        static let bubblePaddingY = "tidalEcho.bubblePaddingY"
         static let bubbleBorderWidth = "tidalEcho.bubbleBorderWidth"
         static let bubbleStyle = "tidalEcho.bubbleStyle"
         static let bubbleShapeStyle = "tidalEcho.bubbleShapeStyle"
@@ -315,6 +324,8 @@ final class AppModel: ObservableObject {
         showsHumanAvatar = defaults.object(forKey: Keys.showsHumanAvatar) == nil ? false : defaults.bool(forKey: Keys.showsHumanAvatar)
         showsClawdPet = defaults.object(forKey: Keys.showsClawdPet) == nil ? true : defaults.bool(forKey: Keys.showsClawdPet)
         bubbleWidthScale = defaults.object(forKey: Keys.bubbleWidthScale) == nil ? 1 : defaults.double(forKey: Keys.bubbleWidthScale)
+        bubblePaddingX = defaults.double(forKey: Keys.bubblePaddingX)
+        bubblePaddingY = defaults.double(forKey: Keys.bubblePaddingY)
         bubbleBorderWidth = defaults.object(forKey: Keys.bubbleBorderWidth) == nil ? 0 : defaults.double(forKey: Keys.bubbleBorderWidth)
         bubbleStyle = EchoBubbleStyle(rawValue: defaults.string(forKey: Keys.bubbleStyle) ?? "") ?? .classic
         let savedBubbleShapeStyle = EchoBubbleShapeStyle(
@@ -423,6 +434,7 @@ final class AppModel: ObservableObject {
         importedChatFonts = ImportedFontStore.sorted(importedChatFonts + imported.filter { record in
             !importedChatFonts.contains(where: { $0.id == record.id })
         })
+        EchoChatFont.invalidateImportedFaceCache()
         if let first = imported.first { chatFont = first.chatFont }
     }
 
@@ -1444,6 +1456,7 @@ final class AppModel: ObservableObject {
     /// nil 时各处保留自己原来的次要文字色（有的主题会再叠一层透明度）。
     var customProcessTitleColor: Color? { Color(hexString: processTitleColorHex) }
     var customTimestampColor: Color? { Color(hexString: timestampColorHex) }
+    var bubblePaddingOffset: CGSize { CGSize(width: bubblePaddingX, height: bubblePaddingY) }
 
     func setProcessTitleColor(_ color: Color) {
         processTitleColorHex = Self.hexString(color) ?? ""

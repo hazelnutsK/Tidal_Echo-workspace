@@ -183,8 +183,23 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
                 .weight(weight)
         case .rounded, .monospaced:
             return .system(size: CGFloat(size), weight: weight, design: design)
-        case .imported(let name):
-            return .custom(name, size: CGFloat(size)).weight(weight)
+        case .imported:
+            // Route through the same face/axis selection as the numeric-weight path.
+            return Font(uiFont(size: size, numericWeight: Self.numericWeight(of: weight)))
+        }
+    }
+
+    private static func numericWeight(of weight: Font.Weight) -> Double {
+        switch weight {
+        case .ultraLight: return 100
+        case .thin: return 200
+        case .light: return 300
+        case .medium: return 500
+        case .semibold: return 600
+        case .bold: return 700
+        case .heavy: return 800
+        case .black: return 900
+        default: return 400
         }
     }
 
@@ -350,8 +365,82 @@ enum EchoChatFont: RawRepresentable, CaseIterable, Hashable, Identifiable {
             return UIFont(descriptor: descriptor, size: size)
         }
         // Static font files keep their own outlines instead of synthesizing a
-        // different face; a separate imported weight remains a separate choice.
-        return base
+        // different face. When other weights of the same family are imported,
+        // the slider moves from the chosen face (at 400) to the nearest real one.
+        let faces = staticFaces(matching: base)
+        guard faces.count > 1, let own = faces.first(where: { $0.name == base.fontName }) else { return base }
+        let target = own.weight + (numericWeight - 400)
+        guard let nearest = faces.min(by: { abs($0.weight - target) < abs($1.weight - target) }),
+              nearest.name != base.fontName else { return base }
+        return UIFont(name: nearest.name, size: size) ?? base
+    }
+
+    enum ImportedWeightSupport: Equatable {
+        case variable
+        case faces(Int)
+        case single
+    }
+
+    static func importedWeightSupport(name: String) -> ImportedWeightSupport {
+        guard let base = UIFont(name: name, size: 16) else { return .single }
+        if let axes = CTFontCopyVariationAxes(base as CTFont) as? [[String: Any]],
+           axes.contains(where: {
+               ($0[kCTFontVariationAxisIdentifierKey as String] as? NSNumber)?.uint32Value == wghtAxisID
+           }) {
+            return .variable
+        }
+        let count = staticFaces(matching: base).count
+        return count > 1 ? .faces(count) : .single
+    }
+
+    private struct StaticFace {
+        let name: String
+        let weight: Double
+    }
+
+    private static let staticFaceLock = NSLock()
+    nonisolated(unsafe) private static var staticFaceCache: [String: [StaticFace]] = [:]
+
+    /// Upright/italic and width must match, so a slider never jumps to an italic or condensed cut.
+    private static func staticFaces(matching base: UIFont) -> [StaticFace] {
+        let traits = base.fontDescriptor.symbolicTraits
+        let key = "\(base.familyName)|\(traits.contains(.traitItalic))|\(traits.contains(.traitCondensed))|\(traits.contains(.traitExpanded))"
+        staticFaceLock.lock()
+        defer { staticFaceLock.unlock() }
+        if let cached = staticFaceCache[key] { return cached }
+        let faces = UIFont.fontNames(forFamilyName: base.familyName).compactMap { name -> StaticFace? in
+            guard let font = UIFont(name: name, size: 16) else { return nil }
+            let other = font.fontDescriptor.symbolicTraits
+            guard other.contains(.traitItalic) == traits.contains(.traitItalic),
+                  other.contains(.traitCondensed) == traits.contains(.traitCondensed),
+                  other.contains(.traitExpanded) == traits.contains(.traitExpanded) else { return nil }
+            return StaticFace(name: name, weight: weightClass(of: font))
+        }
+        staticFaceCache[key] = faces
+        return faces
+    }
+
+    /// OS/2 usWeightClass (100…900) when the file has it, else the nearest CoreText weight trait.
+    private static func weightClass(of font: UIFont) -> Double {
+        if let table = CTFontCopyTable(font as CTFont, CTFontTableTag(kCTFontTableOS2), []) as Data?,
+           table.count >= 6 {
+            let value = Int(table[table.startIndex + 4]) << 8 | Int(table[table.startIndex + 5])
+            if (1...1000).contains(value) { return Double(value) }
+        }
+        let traits = CTFontCopyTraits(font as CTFont) as NSDictionary
+        let trait = (traits[kCTFontWeightTrait] as? NSNumber)?.doubleValue ?? 0
+        let steps: [(trait: Double, weight: Double)] = [
+            (-0.8, 100), (-0.6, 200), (-0.4, 300), (0, 400), (0.23, 500),
+            (0.3, 600), (0.4, 700), (0.56, 800), (0.62, 900)
+        ]
+        return steps.min(by: { abs($0.trait - trait) < abs($1.trait - trait) })?.weight ?? 400
+    }
+
+    /// A newly imported file may add faces to a family that was already looked up.
+    static func invalidateImportedFaceCache() {
+        staticFaceLock.lock()
+        staticFaceCache.removeAll()
+        staticFaceLock.unlock()
     }
 
     /// 霞鹜文楷随 App 打包的是三个常用字子集。滑块落在中间或更粗的数值时，
@@ -546,6 +635,8 @@ extension EnvironmentValues {
     /// 外观里自定义的思考/工具标题色和时间戳色，ChatView 统一注入；nil＝各处沿用主题色。
     @Entry var processTitleColor: Color? = nil
     @Entry var timestampColor: Color? = nil
+    /// 外观里“气泡内边距”拉条：width＝左右、height＝上下，在各主题基准值上加减。
+    @Entry var bubblePaddingOffset: CGSize = .zero
 }
 
 extension Double {

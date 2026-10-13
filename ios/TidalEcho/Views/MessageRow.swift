@@ -83,6 +83,7 @@ private enum IncomingCallCardState: Equatable {
 
 struct MessageRow: View {
     @Environment(\.timestampColor) private var timestampColor
+    @Environment(\.bubblePaddingOffset) private var bubblePaddingOffset
     let message: ChatMessage
     let palette: EchoPalette
     let chatFont: EchoChatFont
@@ -585,27 +586,16 @@ struct MessageRow: View {
         bubbleStyle == .classic || bubbleStyle == .frosted ? bubbleShapeStyle.smoothSpec : nil
     }
 
-    private var usesTelegramShape: Bool {
-        bubbleShapeStyle == .telegram
-            && (bubbleStyle == .classic || bubbleStyle == .frosted)
-    }
-
     private var carriesBubble: Bool { message.author == .human || showsAIBubble }
 
-    /// Measured off ChatNest: ~10pt of padding inside a bubble, and bodiless AI
-    /// text almost flush, so consecutive segments read as one reply's paragraphs
-    /// instead of a stack of cards.
-    private var bubbleHorizontalPadding: CGFloat {
-        if carriesBubble, let smoothSpec { return smoothSpec.horizontalPadding }
-        if isNest { return 10 }
-        return usesTelegramShape ? 10 : 13
+    private var bubblePadding: (horizontal: CGFloat, vertical: CGFloat) {
+        ChatBubbleInsets.padding(
+            bubbleStyle: bubbleStyle, shapeStyle: bubbleShapeStyle,
+            isNest: isNest, carriesBubble: carriesBubble, offset: bubblePaddingOffset
+        )
     }
-
-    private var bubbleVerticalPadding: CGFloat {
-        if carriesBubble, let smoothSpec { return smoothSpec.verticalPadding }
-        let base: CGFloat = isNest ? (carriesBubble ? 10 : 2) : (usesTelegramShape ? 8 : 9)
-        return base + (carriesBubble ? PWAChatBubbleShape.inflationPadding(effectiveBubbleInflation) : 0)
-    }
+    private var bubbleHorizontalPadding: CGFloat { bubblePadding.horizontal }
+    private var bubbleVerticalPadding: CGFloat { bubblePadding.vertical }
 
     private var effectiveBubbleInflation: CGFloat {
         bubbleStyle == .classic && bubbleShapeStyle == .standard ? PWAChatBubbleShape.defaultInflation : 0
@@ -1180,6 +1170,40 @@ private struct SendingClock: View {
                 value: rotation
             )
             .accessibilityLabel("发送中")
+    }
+}
+
+/// 气泡里文字离边的距离。消息、流式回复和设置里的预览共用这一份；
+/// 外观里“气泡内边距”拉条的偏移只在有气泡框时叠上去。
+enum ChatBubbleInsets {
+    /// Measured off ChatNest: ~10pt of padding inside a bubble, and bodiless AI
+    /// text almost flush, so consecutive segments read as one reply's paragraphs
+    /// instead of a stack of cards.
+    static func padding(
+        bubbleStyle: EchoBubbleStyle,
+        shapeStyle: EchoBubbleShapeStyle,
+        isNest: Bool,
+        carriesBubble: Bool,
+        offset: CGSize
+    ) -> (horizontal: CGFloat, vertical: CGFloat) {
+        let shaped = bubbleStyle == .classic || bubbleStyle == .frosted
+        let smoothSpec = shaped ? shapeStyle.smoothSpec : nil
+        let telegram = shaped && shapeStyle == .telegram
+        let inflation = bubbleStyle == .classic && shapeStyle == .standard
+            ? PWAChatBubbleShape.inflationPadding(PWAChatBubbleShape.defaultInflation)
+            : 0
+        let horizontal: CGFloat
+        let vertical: CGFloat
+        if carriesBubble, let smoothSpec {
+            horizontal = smoothSpec.horizontalPadding
+            vertical = smoothSpec.verticalPadding
+        } else {
+            horizontal = isNest ? 10 : (telegram ? 10 : 13)
+            let base: CGFloat = isNest ? (carriesBubble ? 10 : 2) : (telegram ? 8 : 9)
+            vertical = base + (carriesBubble ? inflation : 0)
+        }
+        guard carriesBubble else { return (horizontal, vertical) }
+        return (max(0, horizontal + offset.width), max(0, vertical + offset.height))
     }
 }
 
@@ -2399,6 +2423,7 @@ struct StreamingProcessRow: View {
 }
 
 struct StreamingReplyRow: View {
+    @Environment(\.bubblePaddingOffset) private var bubblePaddingOffset
     let text: String
     let palette: EchoPalette
     let chatFont: EchoChatFont
@@ -2510,10 +2535,6 @@ struct StreamingReplyRow: View {
         )
     }
 
-    private var usesTelegramShape: Bool {
-        bubbleShapeStyle == .telegram && (bubbleStyle == .classic || bubbleStyle == .frosted)
-    }
-
     private var usesUpperCornerShape: Bool {
         bubbleShapeStyle == .upperTail && (bubbleStyle == .classic || bubbleStyle == .frosted)
     }
@@ -2522,17 +2543,14 @@ struct StreamingReplyRow: View {
         bubbleStyle == .classic || bubbleStyle == .frosted ? bubbleShapeStyle.smoothSpec : nil
     }
 
-    private var bubbleHorizontalPadding: CGFloat {
-        if showsAIBubble, let smoothSpec { return smoothSpec.horizontalPadding }
-        if isNest { return 10 }
-        return usesTelegramShape ? 10 : 13
+    private var bubblePadding: (horizontal: CGFloat, vertical: CGFloat) {
+        ChatBubbleInsets.padding(
+            bubbleStyle: bubbleStyle, shapeStyle: bubbleShapeStyle,
+            isNest: isNest, carriesBubble: showsAIBubble, offset: bubblePaddingOffset
+        )
     }
-
-    private var bubbleVerticalPadding: CGFloat {
-        if showsAIBubble, let smoothSpec { return smoothSpec.verticalPadding }
-        let base: CGFloat = isNest ? (showsAIBubble ? 10 : 2) : (usesTelegramShape ? 8 : 9)
-        return base + (showsAIBubble ? PWAChatBubbleShape.inflationPadding(effectiveBubbleInflation) : 0)
-    }
+    private var bubbleHorizontalPadding: CGFloat { bubblePadding.horizontal }
+    private var bubbleVerticalPadding: CGFloat { bubblePadding.vertical }
 
     private var effectiveBubbleInflation: CGFloat {
         bubbleStyle == .classic && bubbleShapeStyle == .standard ? PWAChatBubbleShape.defaultInflation : 0

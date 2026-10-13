@@ -680,8 +680,8 @@ private struct AppearanceSettingsView: View {
                         Text(EchoChatFont.wenKaiWeightDiagnostic(model.chatWeight))
                             .font(.caption2)
                             .foregroundStyle(palette.secondaryText)
-                    } else if case .imported = model.chatFont {
-                        Text("可变字体支持调整字重；普通字体保留文件自身的字重。")
+                    } else if case .imported(let name) = model.chatFont {
+                        Text(Self.importedWeightNote(EchoChatFont.importedWeightSupport(name: name)))
                             .font(.caption2)
                             .foregroundStyle(palette.secondaryText)
                     }
@@ -860,8 +860,8 @@ private struct AppearanceSettingsView: View {
                                 size: PWAChatMetrics.bubbleFontSize(for: model.chatFont) * model.fontScale,
                                 numericWeight: model.chatWeight
                             ))
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 10)
+                            .padding(.horizontal, previewPadding.horizontal)
+                            .padding(.vertical, previewPadding.vertical)
                             .foregroundStyle(model.resolvedAIBubbleTextColor(default: palette.text))
                             .background {
                                 LiquidGlassBubbleBackground(
@@ -880,8 +880,8 @@ private struct AppearanceSettingsView: View {
                                 size: PWAChatMetrics.bubbleFontSize(for: model.chatFont) * model.fontScale,
                                 numericWeight: model.chatWeight
                             ))
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 10)
+                            .padding(.horizontal, previewPadding.horizontal)
+                            .padding(.vertical, previewPadding.vertical)
                             .foregroundStyle(model.resolvedHumanBubbleTextColor(default: palette.text))
                             .background {
                                 LiquidGlassBubbleBackground(
@@ -957,6 +957,27 @@ private struct AppearanceSettingsView: View {
                 range: 0.6...1.5,
                 step: 0.05,
                 note: "超过 120% 时只继续放宽 AI 气泡"
+            )
+
+            VStack(spacing: 10) {
+                paddingPreviewBubble("这样字离边近一点", isHuman: false)
+                paddingPreviewBubble("再松一点", isHuman: true)
+            }
+            .padding(.vertical, 6)
+            settingSlider(
+                title: "气泡左右内边距",
+                valueText: Self.paddingOffsetText(model.bubblePaddingX),
+                value: $model.bubblePaddingX,
+                range: -6...12,
+                step: 1
+            )
+            settingSlider(
+                title: "气泡上下内边距",
+                valueText: Self.paddingOffsetText(model.bubblePaddingY),
+                value: $model.bubblePaddingY,
+                range: -6...12,
+                step: 1,
+                note: "在当前主题和形状原有的边距上加减。"
             )
             settingSlider(
                 title: "边框粗细",
@@ -1041,6 +1062,8 @@ private struct AppearanceSettingsView: View {
                 model.humanBubbleOpacity = 1
                 model.bubbleRadius = 14
                 model.bubbleWidthScale = 1
+                model.bubblePaddingX = 0
+                model.bubblePaddingY = 0
                 model.bubbleBorderWidth = 0
                 model.bubbleStyle = .classic
                 model.bubbleShapeStyle = .standard
@@ -1070,8 +1093,8 @@ private struct AppearanceSettingsView: View {
                 .foregroundStyle(isHuman
                     ? model.resolvedHumanBubbleTextColor(default: palette.text)
                     : model.resolvedAIBubbleTextColor(default: palette.text))
-                .padding(.horizontal, spec.horizontalPadding)
-                .padding(.vertical, spec.verticalPadding)
+                .padding(.horizontal, previewPadding.horizontal)
+                .padding(.vertical, previewPadding.vertical)
                 .background {
                     shape.fill((isHuman
                         ? model.resolvedHumanBubbleColor(default: palette.humanBubble)
@@ -1083,6 +1106,72 @@ private struct AppearanceSettingsView: View {
                     shape.stroke(palette.hairline, lineWidth: CGFloat(model.bubbleBorderWidth))
                 }
             if !isHuman { Spacer(minLength: 24) }
+        }
+    }
+
+    private var previewPadding: (horizontal: CGFloat, vertical: CGFloat) {
+        ChatBubbleInsets.padding(
+            bubbleStyle: model.bubbleStyle, shapeStyle: model.bubbleShapeStyle,
+            isNest: model.theme == .nest, carriesBubble: true, offset: model.bubblePaddingOffset
+        )
+    }
+
+    private static func paddingOffsetText(_ value: Double) -> String {
+        let points = Int(value.rounded())
+        return points == 0 ? "默认" : (points > 0 ? "+\(points)" : "\(points)")
+    }
+
+    /// 只为看边距：形状跟着当前的平滑角/圆角走，液态玻璃用同一个玻璃底。
+    @ViewBuilder
+    private func paddingPreviewBubble(_ text: String, isHuman: Bool) -> some View {
+        let fill = (isHuman
+            ? model.resolvedHumanBubbleColor(default: palette.humanBubble)
+            : model.resolvedAIBubbleColor(default: palette.aiBubble))
+        let opacity = isHuman ? model.humanBubbleOpacity : model.aiBubbleOpacity
+        let spec = model.bubbleStyle == .liquid ? nil : model.bubbleShapeStyle.smoothSpec
+        let shape: AnyShape = spec.map { AnyShape(SmoothCornerBubbleShape(radius: $0.radius, smoothing: $0.smoothing)) }
+            ?? AnyShape(RoundedRectangle(cornerRadius: CGFloat(model.bubbleRadius), style: .continuous))
+        HStack {
+            if isHuman { Spacer(minLength: 24) }
+            Text(text)
+                .font(model.chatFont.font(
+                    size: PWAChatMetrics.bubbleFontSize(for: model.chatFont) * model.fontScale,
+                    numericWeight: model.chatWeight
+                ))
+                .foregroundStyle(isHuman
+                    ? model.resolvedHumanBubbleTextColor(default: palette.text)
+                    : model.resolvedAIBubbleTextColor(default: palette.text))
+                .padding(.horizontal, previewPadding.horizontal)
+                .padding(.vertical, previewPadding.vertical)
+                .background {
+                    if model.bubbleStyle == .liquid {
+                        LiquidGlassBubbleBackground(
+                            tint: fill, tintOpacity: opacity,
+                            radius: CGFloat(model.bubbleRadius),
+                            settings: model.liquidGlassSettings
+                        )
+                    } else {
+                        shape.fill(fill.opacity(opacity))
+                    }
+                }
+                .overlay {
+                    if model.bubbleStyle != .liquid && model.bubbleBorderWidth > 0 {
+                        shape.stroke(palette.hairline, lineWidth: CGFloat(model.bubbleBorderWidth))
+                    }
+                }
+                .animation(.easeOut(duration: 0.15), value: model.bubblePaddingOffset)
+            if !isHuman { Spacer(minLength: 24) }
+        }
+    }
+
+    private static func importedWeightNote(_ support: EchoChatFont.ImportedWeightSupport) -> String {
+        switch support {
+        case .variable:
+            return "可变字体，粗细可以连续调。"
+        case .faces(let count):
+            return "这个字体导入了 \(count) 档字重，滑块会换到最接近的那一档；400 是你选中的那一档。"
+        case .single:
+            return "这个字体文件只有一种字重，所以调不动。把同一字体的其他字重文件（Light、Medium、Bold 等）也导进来，滑块就能在它们之间换。"
         }
     }
 
