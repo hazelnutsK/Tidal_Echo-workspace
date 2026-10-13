@@ -77,7 +77,7 @@ struct BookshelfView: View {
         .task(id: stopKey) { await loadStop() }
         .refreshable { await loadShelf() }
         .sheet(isPresented: $showingFilePicker) {
-            BookDocumentPicker(
+            FilesDocumentPicker(
                 contentTypes: BookshelfView.importableTypes,
                 onPick: { url in
                     showingFilePicker = false
@@ -415,48 +415,6 @@ private enum BookReviewSamples {
         let json = #"{"id":9,"book_id":1,"chapter_idx":0,"start_off":0,"end_off":4,"quote":"目次","note":"你上次停在目次，我也停在那儿，后面一个字都没偷看。","author":"ai","reply_to":null,"created_at":"2026-08-13T10:00:00"}"#
         let note = try? JSONDecoder().decode(BookAnnotation.self, from: Data(json.utf8))
         return [1: BookStop(heading: "目次", note: note)]
-    }
-}
-
-private struct BookDocumentPicker: UIViewControllerRepresentable {
-    let contentTypes: [UTType]
-    let onPick: (URL) -> Void
-    let onCancel: () -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onPick: onPick, onCancel: onCancel)
-    }
-
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: contentTypes, asCopy: true)
-        picker.allowsMultipleSelection = false
-        picker.shouldShowFileExtensions = true
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let onPick: (URL) -> Void
-        let onCancel: () -> Void
-
-        init(onPick: @escaping (URL) -> Void, onCancel: @escaping () -> Void) {
-            self.onPick = onPick
-            self.onCancel = onCancel
-        }
-
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            guard let url = urls.first else {
-                onCancel()
-                return
-            }
-            onPick(url)
-        }
-
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            onCancel()
-        }
     }
 }
 

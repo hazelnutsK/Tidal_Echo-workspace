@@ -786,23 +786,25 @@ private struct AppearanceSettingsView: View {
         .listRowBackground(settingsRowBackground(theme: model.theme, palette: palette))
         .navigationTitle("外观与聊天")
         .navigationBarTitleDisplayMode(.inline)
-        .fileImporter(
-            isPresented: $showingFontImporter,
-            allowedContentTypes: [.font] + ["ttf", "otf", "ttc"].compactMap { UTType(filenameExtension: $0) },
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                isImportingFont = true
-                Task {
-                    defer { isImportingFont = false }
-                    do { try await model.importChatFont(from: url) }
-                    catch { fontError = error.localizedDescription }
-                }
-            case .failure(let error):
-                if (error as NSError).code != NSUserCancelledError { fontError = error.localizedDescription }
-            }
+        .sheet(isPresented: $showingFontImporter) {
+            FilesDocumentPicker(
+                contentTypes: [.font] + ["ttf", "otf", "ttc"].compactMap { UTType(filenameExtension: $0) },
+                onPick: { url in
+                    showingFontImporter = false
+                    isImportingFont = true
+                    Task {
+                        defer {
+                            isImportingFont = false
+                            // asCopy 给的是沙盒临时副本，导入时已另存一份，这份用完就删。
+                            try? FileManager.default.removeItem(at: url)
+                        }
+                        do { try await model.importChatFont(from: url) }
+                        catch { fontError = error.localizedDescription }
+                    }
+                },
+                onCancel: { showingFontImporter = false }
+            )
+            .ignoresSafeArea()
         }
         .alert("字体导入失败", isPresented: Binding(
             get: { fontError != nil },
