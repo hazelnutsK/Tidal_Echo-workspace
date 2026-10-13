@@ -134,6 +134,8 @@ struct ChatView: View {
                 .zIndex(20)
             }
         }
+        .environment(\.processTitleColor, model.customProcessTitleColor)
+        .environment(\.timestampColor, model.customTimestampColor)
         .sheet(isPresented: $showingSettings) {
             SettingsView(
                 model: model,
@@ -2215,14 +2217,35 @@ private struct ComposerView: View {
     }
 
     private var weChatDockBackground: some View {
-        Rectangle()
+        let isDark = model.theme == .harbor
+        // 原来是磨砂上盖一层均匀主题色，没有明暗，像一块亚克力板。
+        // 改成上亮下沉的一层薄光，再给上沿一道受光的边，磨砂才有厚度。
+        return Rectangle()
             .fill(.ultraThinMaterial)
             .overlay {
-                Rectangle().fill(palette.composer.opacity(model.theme == .harbor ? 0.10 : 0.16))
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(isDark ? 0.05 : 0.20),
+                        palette.composer.opacity(isDark ? 0.06 : 0.12)
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
             }
             .overlay(alignment: .top) {
-                Rectangle().fill(palette.hairline).frame(height: 0.5)
+                VStack(spacing: 0) {
+                    Rectangle().fill(palette.hairline.opacity(isDark ? 1 : 0.7)).frame(height: 0.5)
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(isDark ? 0.02 : 0.20),
+                            Color.white.opacity(isDark ? 0.16 : 0.80),
+                            Color.white.opacity(isDark ? 0.02 : 0.20)
+                        ],
+                        startPoint: .leading, endPoint: .trailing
+                    )
+                    .frame(height: 0.5)
+                }
             }
+            .shadow(color: Color.black.opacity(isDark ? 0.22 : 0.045), radius: 12, y: -2)
             // Extend only the material through the home-indicator safe area.
             // Content keeps the keyboard-safe layout and adds no blank spacer.
             .ignoresSafeArea(.container, edges: .bottom)

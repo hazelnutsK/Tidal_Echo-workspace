@@ -151,6 +151,13 @@ final class AppModel: ObservableObject {
     @Published var humanBubbleTextColorHex: String {
         didSet { UserDefaults.standard.set(humanBubbleTextColorHex, forKey: Keys.humanBubbleTextColor) }
     }
+    /// 思考 / 工具那一行的标题，和气泡下面的时间戳。空字符串＝跟主题的次要文字色走。
+    @Published var processTitleColorHex: String {
+        didSet { UserDefaults.standard.set(processTitleColorHex, forKey: Keys.processTitleColor) }
+    }
+    @Published var timestampColorHex: String {
+        didSet { UserDefaults.standard.set(timestampColorHex, forKey: Keys.timestampColor) }
+    }
     @Published var backgroundImage: UIImage?
     @Published var aiAvatarImage: UIImage?
     @Published var humanAvatarImage: UIImage?
@@ -231,6 +238,8 @@ final class AppModel: ObservableObject {
         static let humanBubbleColor = "tidalEcho.humanBubbleColor"
         static let aiBubbleTextColor = "tidalEcho.aiBubbleTextColor"
         static let humanBubbleTextColor = "tidalEcho.humanBubbleTextColor"
+        static let processTitleColor = "tidalEcho.processTitleColor"
+        static let timestampColor = "tidalEcho.timestampColor"
         // Kept only to migrate the first shared text-color setting.
         static let bubbleTextColor = "tidalEcho.bubbleTextColor"
         static let lastNativeNotificationID = "tidalEcho.lastNativeNotificationID"
@@ -335,6 +344,8 @@ final class AppModel: ObservableObject {
         let legacyBubbleTextColor = defaults.string(forKey: Keys.bubbleTextColor) ?? ""
         aiBubbleTextColorHex = defaults.string(forKey: Keys.aiBubbleTextColor) ?? legacyBubbleTextColor
         humanBubbleTextColorHex = defaults.string(forKey: Keys.humanBubbleTextColor) ?? legacyBubbleTextColor
+        processTitleColorHex = defaults.string(forKey: Keys.processTitleColor) ?? ""
+        timestampColorHex = defaults.string(forKey: Keys.timestampColor) ?? ""
         activeSessionID = defaults.string(forKey: Keys.activeSessionID) ?? Self.legacySessionID
         if let hidden = defaults.array(forKey: Keys.locallyHiddenMessageIDs) as? [Int] {
             locallyHiddenMessageIDs = Set(hidden)
@@ -1430,6 +1441,18 @@ final class AppModel: ObservableObject {
         Color(hexString: humanBubbleTextColorHex) ?? fallback
     }
 
+    /// nil 时各处保留自己原来的次要文字色（有的主题会再叠一层透明度）。
+    var customProcessTitleColor: Color? { Color(hexString: processTitleColorHex) }
+    var customTimestampColor: Color? { Color(hexString: timestampColorHex) }
+
+    func setProcessTitleColor(_ color: Color) {
+        processTitleColorHex = Self.hexString(color) ?? ""
+    }
+
+    func setTimestampColor(_ color: Color) {
+        timestampColorHex = Self.hexString(color) ?? ""
+    }
+
     func setAIBubbleColor(_ color: Color) {
         aiBubbleColorHex = Self.hexString(color) ?? ""
     }
@@ -1451,6 +1474,8 @@ final class AppModel: ObservableObject {
         humanBubbleColorHex = ""
         aiBubbleTextColorHex = ""
         humanBubbleTextColorHex = ""
+        processTitleColorHex = ""
+        timestampColorHex = ""
         UserDefaults.standard.removeObject(forKey: Keys.bubbleTextColor)
     }
 

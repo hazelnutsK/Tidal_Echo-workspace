@@ -542,6 +542,12 @@ extension Color {
     }
 }
 
+extension EnvironmentValues {
+    /// 外观里自定义的思考/工具标题色和时间戳色，ChatView 统一注入；nil＝各处沿用主题色。
+    @Entry var processTitleColor: Color? = nil
+    @Entry var timestampColor: Color? = nil
+}
+
 extension Double {
     var echoFontWeight: Font.Weight {
         switch self {

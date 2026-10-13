@@ -82,6 +82,7 @@ private enum IncomingCallCardState: Equatable {
 }
 
 struct MessageRow: View {
+    @Environment(\.timestampColor) private var timestampColor
     let message: ChatMessage
     let palette: EchoPalette
     let chatFont: EchoChatFont
@@ -372,14 +373,17 @@ struct MessageRow: View {
                             case .sent:
                                 if showsTimestamp {
                                     Text(Self.formatTime(message.timestamp))
+                                        .foregroundStyle(timestampColor ?? palette.secondaryText)
                                 }
                             }
                         } else if let apiUsageText {
                             Text("\(Self.formatTime(message.timestamp)) · \(apiUsageText)")
                                 .monospacedDigit()
                                 .fixedSize(horizontal: false, vertical: true)
+                                .foregroundStyle(timestampColor ?? palette.secondaryText)
                         } else if showsTimestamp && !isNest {
                             Text(Self.formatTime(message.timestamp))
+                                .foregroundStyle(timestampColor ?? palette.secondaryText)
                         }
                     }
                     .font(.system(size: 10))
@@ -448,7 +452,7 @@ struct MessageRow: View {
                 if apiUsageText == nil {
                     Text(Self.formatTime(message.timestamp))
                         .font(.system(size: 10, weight: .regular))
-                        .foregroundStyle(palette.secondaryText.opacity(0.62))
+                        .foregroundStyle(timestampColor ?? palette.secondaryText.opacity(0.62))
                 }
             }
         }
@@ -1638,6 +1642,7 @@ private struct MessageTimerCard: View {
 }
 
 private struct ProcessRow: View {
+    @Environment(\.processTitleColor) private var processTitleColor
     let message: ChatMessage
     let palette: EchoPalette
     let chatFont: EchoChatFont
@@ -1714,6 +1719,7 @@ private struct ProcessRow: View {
     }
 
     private var isThinking: Bool { message.kind == "thinking" }
+    private var titleColor: Color { processTitleColor ?? palette.secondaryText }
     private var canExpand: Bool { isThinking ? !message.text.isEmpty : !message.meta.steps.isEmpty }
 
     /// 「这轮我想起了东西」——浮现本身是隐形的（旧记忆只垫在他眼前），
@@ -1796,7 +1802,7 @@ private struct ProcessRow: View {
             size: (isNest ? 13 : 12.5) * fontScale,
             weight: isNest ? .regular : .medium
         ))
-        .foregroundStyle(palette.secondaryText)
+        .foregroundStyle(titleColor)
         .padding(.vertical, 2)
     }
 
@@ -1828,7 +1834,7 @@ private struct ProcessRow: View {
             Text(isThinking ? "Thinking" : "Action")
         }
         .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
-        .foregroundStyle(palette.secondaryText)
+        .foregroundStyle(titleColor)
         .padding(.vertical, 2)
     }
 
@@ -1840,7 +1846,7 @@ private struct ProcessRow: View {
                 ClaudeBrandMark(
                     size: 14,
                     motion: .tool,
-                    color: palette.secondaryText
+                    color: titleColor
                 )
             }
             Text(isThinking ? nestThinkingTitle : "查看工具调用")
@@ -1850,7 +1856,7 @@ private struct ProcessRow: View {
                 .font(.system(size: 10, weight: .semibold))
         }
         .font(chatFont.font(size: 13 * fontScale, weight: .regular))
-        .foregroundStyle(palette.secondaryText)
+        .foregroundStyle(titleColor)
         .padding(.vertical, 3)
     }
 
@@ -1878,7 +1884,7 @@ private struct ProcessRow: View {
                 .rotationEffect(.degrees(expanded ? 180 : 0))
         }
         .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
-        .foregroundStyle(palette.secondaryText)
+        .foregroundStyle(titleColor)
         .padding(.vertical, 2)
     }
 
@@ -1896,7 +1902,7 @@ private struct ProcessRow: View {
             }
         }
         .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
-        .foregroundStyle(palette.secondaryText)
+        .foregroundStyle(titleColor)
         .padding(.horizontal, isPaper ? 0 : 11)
         .padding(.vertical, isPaper ? 2 : 4)
         .background {
@@ -2237,6 +2243,7 @@ private struct ToolStepPreview: View {
 }
 
 struct StreamingProcessRow: View {
+    @Environment(\.processTitleColor) private var processTitleColor
     let title: String
     let text: String
     let palette: EchoPalette
@@ -2265,6 +2272,7 @@ struct StreamingProcessRow: View {
                         )
                         Text("Thinking…")
                             .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                            .foregroundStyle(titleColor)
                             .offset(y: 2)
                     }
                 }
@@ -2277,11 +2285,12 @@ struct StreamingProcessRow: View {
             .transition(.opacity)
         } else if isNest {
             HStack(alignment: .top, spacing: 8) {
-                ClaudeBrandMark(size: 15, motion: .thinking, color: palette.secondaryText)
+                ClaudeBrandMark(size: 15, motion: .thinking, color: titleColor)
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Thinking…")
                         .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                        .foregroundStyle(titleColor)
                     streamingText
                         .lineLimit(2)
                 }
@@ -2300,6 +2309,7 @@ struct StreamingProcessRow: View {
                     Image(systemName: "heart.fill")
                         .font(.system(size: 11, weight: .medium))
                 }
+                .foregroundStyle(titleColor)
                 Divider().overlay(palette.hairline)
                 streamingText
             }
@@ -2319,6 +2329,7 @@ struct StreamingProcessRow: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text("Thinking…")
                     .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                    .foregroundStyle(titleColor)
                 streamingText
                     .lineLimit(2)
             }
@@ -2335,6 +2346,7 @@ struct StreamingProcessRow: View {
                         .rotationEffect(.degrees(90))
                 }
                 .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                .foregroundStyle(titleColor)
                 .padding(.horizontal, isPaper ? 0 : 11)
                 .padding(.vertical, isPaper ? 2 : 4)
                 .background {
@@ -2383,6 +2395,7 @@ struct StreamingProcessRow: View {
     }
 
     private var isHarbor: Bool { !isPaper && !isMist && !isNest }
+    private var titleColor: Color { processTitleColor ?? palette.secondaryText }
 }
 
 struct StreamingReplyRow: View {

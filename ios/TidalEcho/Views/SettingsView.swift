@@ -916,6 +916,16 @@ private struct AppearanceSettingsView: View {
                 set: { model.setHumanBubbleTextColor($0) }
             ), supportsOpacity: false)
 
+            ColorPicker("思考与工具标题颜色", selection: Binding(
+                get: { model.customProcessTitleColor ?? palette.secondaryText },
+                set: { model.setProcessTitleColor($0) }
+            ), supportsOpacity: false)
+
+            ColorPicker("时间戳颜色", selection: Binding(
+                get: { model.customTimestampColor ?? palette.secondaryText },
+                set: { model.setTimestampColor($0) }
+            ), supportsOpacity: false)
+
             settingSlider(
                 title: "AI 气泡透明度",
                 valueText: "\(Int((model.aiBubbleOpacity * 100).rounded()))%",
@@ -1019,7 +1029,7 @@ private struct AppearanceSettingsView: View {
                 )
             }
 
-            Button("恢复主题气泡配色") { model.resetBubbleColors() }
+            Button("恢复主题配色") { model.resetBubbleColors() }
             Button("恢复外观默认值") {
                 model.composerStyle = .original
                 model.chatFont = .system
