@@ -50,14 +50,21 @@ The owner requires every completed Tidal Echo source change to be committed and
 pushed promptly to this private repository, unless she explicitly asks to hold
 the push. Do not leave completed changes only on the local computer.
 
-Source synchronization and compilation are separate. GitHub Actions are enabled
-for deliberate iOS builds, and `iOS Build` runs only through `workflow_dispatch`.
-An instruction to hold compilation does not hold the source push. When a build is
-requested, dispatch it for the pushed task branch and check its result:
+Source synchronization and compilation are separate. From 2026-10-15 the default
+iOS build runs in the public repository `hazelnutsK/Tidal_Echo`, on its dedicated
+`ios-build` branch. An instruction to hold compilation does not hold the private
+source push. Publish the iOS-only snapshot from the requested pushed commit:
 
 ```bash
-gh workflow run ios-build.yml -R hazelnutsK/Tidal_Echo-workspace --ref cc/your-task
+python3 tools/export_public_ios.py --ref <pushed-source-commit> --publish
+# Only when a build was requested:
+python3 tools/export_public_ios.py --ref <pushed-source-commit> --publish --build
 ```
+
+See `docs/public-ios-build.md`. The exporter does not copy private Git history,
+backend code, runtime data or credentials. Public source pushes do not start a
+build. Private builds remain available for explicit special requests but are no
+longer the normal packaging route.
 
 ## Applying a change to Windows
 

@@ -12,9 +12,13 @@ relevant offline checks, commit it and push that branch to this private origin.
 Report the branch, commit, changed files and validation results.
 
 The owner requires timely private GitHub synchronization for future changes.
-Source pushes do not trigger iOS builds; dispatch `iOS Build` manually when
-requested. If she says to hold compilation, still push source unless she also
-explicitly asks to hold the push.
+Source pushes do not trigger iOS builds. Starting 2026-10-15, build on the public
+repository hazelnutsK/Tidal_Echo, branch ios-build. Use
+`python3 tools/export_public_ios.py --ref <pushed-source-commit> --publish`
+to publish the iOS-only snapshot, and add `--build` only when compilation is
+requested. Read docs/public-ios-build.md. This requires public-repository account
+authentication; the VPS private deploy key cannot publish publicly. If she says
+to hold compilation, still push private source unless she also asks to hold the push.
 
 Do not copy credentials, user conversations, persona files, databases or uploads
 into Git. Do not start companion channel consumers from this checkout. The
