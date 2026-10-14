@@ -120,9 +120,9 @@ struct MessageRow: View {
     let isNestGroupTail: Bool
     let showsNestDisclaimer: Bool
     let isIncomingCallActive: Bool
-    let onToggleStar: () -> Void
     /// nil when this message cannot join a multi-selection.
     let onBeginSelection: (() -> Void)?
+    let onToggleStar: () -> Void
     let onSpeak: () -> Void
     let onCopy: () -> Void
     let onEdit: () -> Void

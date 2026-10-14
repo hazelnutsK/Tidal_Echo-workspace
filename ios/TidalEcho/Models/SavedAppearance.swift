@@ -20,6 +20,8 @@ struct SavedAppearance: Codable, Identifiable, Hashable {
         var chatFont: String
         var humanChatFont: String?
         var journalFont: String?
+        var processTitleFont: String?
+        var showsProcessDisclosure: Bool?
         var fontScale: Double
         var humanFontScale: Double
         var chatWeight: Double
@@ -49,8 +51,6 @@ struct SavedAppearance: Codable, Identifiable, Hashable {
         var timestampColorHex: String
         var backgroundOpacity: Double
         var backgroundBlur: Double
-        var processTitleFont: String?
-        var showsProcessDisclosure: Bool?
     }
 }
 
