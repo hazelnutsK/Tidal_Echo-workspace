@@ -2,7 +2,7 @@
 
 ## Source and scope
 
-Private repository: `hazelnutsK/Tidal_Echo-workspace`.
+Development repository: `hazelnutsK/Tidal_Echo-workspace` (public since 2026-10-15).
 Local development checkout: `C:/Users/sxc/Projects/Tidal_Echo-workspace`.
 VPS checkout: `/home/xiaoxue/projects/Tidal_Echo-workspace`.
 Live Windows installation: `C:/Users/sxc/Tidal_Echo`.
@@ -28,8 +28,9 @@ Included: backend modules, API loop and bridges, channel plugin, PWA assets,
 native iOS source, offline tests and technical documentation.
 Excluded: credentials, actual persona, conversations, database files, uploads,
 memory annotations, runtime settings/logs, exported CC system prompts and build
-packages. Some code defaults and fixtures retain the owner's names or Windows
-paths; keep this repository private.
+packages. Some code defaults and fixtures retain the owner's names, service
+addresses or Windows paths; the owner explicitly accepted their publication.
+Actual credentials and runtime data must remain outside Git.
 
 ## Editing on the VPS
 
@@ -47,17 +48,22 @@ Do not reset or overwrite somebody else's working tree. Keep new tasks on separa
 branches. The VPS deploy key is scoped to this repository. Existing account login,
 residential proxy, chat session, memory and channel configuration are separate.
 The owner requires every completed Tidal Echo source change to be committed and
-pushed promptly to this private repository, unless she explicitly asks to hold
+pushed promptly to this repository, unless she explicitly asks to hold
 the push. Do not leave completed changes only on the local computer.
 
-Source synchronization and compilation are separate. GitHub Actions are enabled
-for deliberate iOS builds, and `iOS Build` runs only through `workflow_dispatch`.
-An instruction to hold compilation does not hold the source push. When a build is
-requested, dispatch it for the pushed task branch and check its result:
+Source synchronization and compilation are separate. After this repository became
+public on 2026-10-15, iOS builds run directly here. An instruction to hold
+compilation does not hold the source push. Dispatch the workflow for the selected
+pushed task branch only when requested:
 
 ```bash
 gh workflow run ios-build.yml -R hazelnutsK/Tidal_Echo-workspace --ref cc/your-task
 ```
+
+See `docs/public-ios-build.md`. Source pushes do not start a build. The old
+`tools/export_public_ios.py` and the original public repository's `ios-build`
+branch are retained as optional historical exports; they are not needed for the
+normal development/build workflow anymore.
 
 ## Applying a change to Windows
 
