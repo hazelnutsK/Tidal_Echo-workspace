@@ -28,12 +28,22 @@ enum ChatLayoutStyle: String, CaseIterable, Identifiable {
 enum ComposerStyle: String, CaseIterable, Identifiable {
     case original
     case wechat
+    case telegram
 
     var id: String { rawValue }
     var title: String {
         switch self {
         case .original: return "原有"
         case .wechat: return "微信式磨砂"
+        case .telegram: return "Telegram 式"
+        }
+    }
+
+    var note: String {
+        switch self {
+        case .original: return "跟着主题走的原有输入栏。"
+        case .wechat: return "微信式磨砂：底部贴边，在线绿点放在输入框右侧，点它可以切换对话窗口。"
+        case .telegram: return "Telegram 式：浮在聊天上的玻璃按钮。打字后录音键让位给发送键；输入框左边的绿点是在线状态，点它切换对话窗口。"
         }
     }
 }

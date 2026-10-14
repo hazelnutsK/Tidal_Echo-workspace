@@ -2109,8 +2109,14 @@ private struct ComposerView: View {
                     .background(palette.accent, in: Capsule())
                     .disabled(model.isUploadingVoice)
                 }
-                .padding(.horizontal, 2)
+                .padding(.horizontal, usesTelegramComposer ? 12 : 2)
                 .padding(.vertical, 6)
+                .background {
+                    // The Telegram bar has no dock behind it, so the recording strip brings its own glass.
+                    if usesTelegramComposer {
+                        Color.clear.glassEffect(.regular, in: Capsule())
+                    }
+                }
             }
 
             if !model.pendingAttachments.isEmpty || model.isUploading {
@@ -2136,7 +2142,9 @@ private struct ComposerView: View {
                 }
             }
 
-            if usesWeChatComposer {
+            if usesTelegramComposer {
+                telegramComposer
+            } else if usesWeChatComposer {
                 weChatComposer
             } else if usesIMessageLayout {
                 if !model.bundledMessageParts.isEmpty {
@@ -2259,18 +2267,26 @@ private struct ComposerView: View {
                 }
             }
         }
-        .padding(.horizontal, usesWeChatComposer ? 10 : (usesIMessageLayout ? 0 : (isNest ? 13 : 10)))
-        .padding(.vertical, usesWeChatComposer ? 8 : (usesIMessageLayout ? 0 : (isNest ? 13 : 10)))
+        .padding(.horizontal, usesTelegramComposer ? 0 : (usesWeChatComposer ? 10 : (usesIMessageLayout ? 0 : (isNest ? 13 : 10))))
+        .padding(.vertical, usesTelegramComposer ? 0 : (usesWeChatComposer ? 8 : (usesIMessageLayout ? 0 : (isNest ? 13 : 10))))
         .background {
-            if usesWeChatComposer {
+            if usesTelegramComposer {
+                // Floats on the wallpaper: each control carries its own glass.
+                EmptyView()
+            } else if usesWeChatComposer {
                 weChatDockBackground
             } else if !usesIMessageLayout {
                 composerContainerGlass
             }
         }
-        .padding(.horizontal, usesWeChatComposer ? 0 : (usesIMessageLayout ? iMessageMetrics.composerInset : (isNest ? 14 : 12)))
-        .padding(.top, usesWeChatComposer ? 0 : (usesIMessageLayout ? 6 : (isNest ? 4 : 7)))
-        .padding(.bottom, usesWeChatComposer ? 0 : (usesIMessageLayout ? 4 : (isNest ? 5 : 7)))
+        .padding(.horizontal, usesTelegramComposer
+            ? telegramSideInset
+            : (usesWeChatComposer ? 0 : (usesIMessageLayout ? iMessageMetrics.composerInset : (isNest ? 14 : 12))))
+        .padding(.top, usesTelegramComposer ? 6 : (usesWeChatComposer ? 0 : (usesIMessageLayout ? 6 : (isNest ? 4 : 7))))
+        .padding(.bottom, usesTelegramComposer ? (isDraftFocused ? 8 : 0) : (usesWeChatComposer ? 0 : (usesIMessageLayout ? 4 : (isNest ? 5 : 7))))
+        // Telegram sits a little into the home-indicator area while the keyboard is down.
+        .offset(y: usesTelegramComposer && !isDraftFocused ? 5 : 0)
+        .animation(.spring(response: 0.36, dampingFraction: 0.86), value: usesTelegramComposer && isDraftFocused)
         .task { await loadBrain() }
         .onDisappear { recorder.cancel() }
         .onChange(of: photoItems) { items in
@@ -2334,6 +2350,43 @@ private struct ComposerView: View {
     private var usesIMessageLayout: Bool { model.chatLayoutStyle == .imessage }
 
     private var usesWeChatComposer: Bool { model.composerStyle == .wechat }
+    private var usesTelegramComposer: Bool { model.composerStyle == .telegram }
+
+    /// Telegram tucks the bar in toward the screen's rounded corners while the
+    /// keyboard is down (26pt on a 390pt-wide phone) and widens it to 8pt above the keyboard.
+    private var telegramSideInset: CGFloat {
+        isDraftFocused ? 8 : min(26, max(12, viewportWidth / 15))
+    }
+
+    private var telegramComposer: some View {
+        TelegramComposerBar(
+            text: $draftText, focus: $isDraftFocused,
+            palette: palette,
+            font: model.chatFont.font(size: 17 * model.fontScale, numericWeight: model.chatWeight),
+            isOnline: model.isStreamConnected, sessionLabel: brainLabel,
+            uploading: model.isUploading,
+            isRecording: recorder.isRecording, voiceDisabled: model.isUploadingVoice,
+            isSending: model.isSendingBundledMessage,
+            showsSend: canSend || model.isSendingBundledMessage,
+            sendIcon: sendButtonIcon,
+            sendLabel: sendButtonAccessibilityLabel, sendHint: sendButtonAccessibilityHint,
+            onAttachments: {
+                isDraftFocused = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    showingAttachmentMenu = true
+                }
+            },
+            onFaces: {
+                isDraftFocused = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    showingKaomojiDrawer = true
+                }
+            },
+            onSessions: onShowSessions,
+            onVoice: { toggleRecording() },
+            onSend: { send() }
+        )
+    }
 
     private var weChatComposer: some View {
         WeChatComposerBar(
@@ -2587,6 +2640,7 @@ private struct ComposerView: View {
     private var sendButtonIcon: String {
         if !hasCurrentComposerContent && !model.bundledMessageParts.isEmpty { return "paperplane.fill" }
         if model.aiReplyTiming == .bundled { return "tray.full.fill" }
+        if usesTelegramComposer { return "paperplane.fill" }
         return isNest && !usesWeChatComposer ? "waveform" : "arrow.up"
     }
 

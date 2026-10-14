@@ -647,7 +647,7 @@ private struct AppearanceSettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                Text("微信式磨砂：底部贴边，在线绿点放在输入框右侧，点它可以切换对话窗口。")
+                Text(model.composerStyle.note)
                     .font(.footnote)
                     .foregroundStyle(palette.secondaryText)
             }
