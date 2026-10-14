@@ -20,11 +20,14 @@ struct TelegramComposerBar: View {
     let sendIcon: String
     let sendLabel: String
     let sendHint: String
+    /// Messages staged for one combined reply; shown as a light send key with a count.
+    let pendingBundleCount: Int
     let onAttachments: () -> Void
     let onFaces: () -> Void
     let onSessions: () -> Void
     let onVoice: () -> Void
     let onSend: () -> Void
+    let onReleaseBundle: () -> Void
 
     @Namespace private var glassSpace
 
@@ -37,16 +40,14 @@ struct TelegramComposerBar: View {
             HStack(alignment: .bottom, spacing: Self.spacing) {
                 circleButton("paperclip", label: "添加附件", action: onAttachments)
                     .disabled(uploading)
-                    .background { glassBackground(Circle(), id: "attach") }
+                    .modifier(PinnedGlass(shape: Circle(), id: "attach", space: glassSpace, isDark: isDark))
                     .accessibilityIdentifier("chat.add")
 
                 field
-                    .background {
-                        glassBackground(
-                            RoundedRectangle(cornerRadius: Self.controlSize / 2, style: .continuous),
-                            id: "field"
-                        )
-                    }
+                    .modifier(PinnedGlass(
+                        shape: RoundedRectangle(cornerRadius: Self.controlSize / 2, style: .continuous),
+                        id: "field", space: glassSpace, isDark: isDark
+                    ))
 
                 if !showsSend {
                     circleButton(isRecording ? "stop.fill" : "mic",
@@ -54,7 +55,10 @@ struct TelegramComposerBar: View {
                                  tint: isRecording ? .white : nil,
                                  action: onVoice)
                         .disabled(voiceDisabled)
-                        .background { glassBackground(Circle(), id: "mic", recording: isRecording) }
+                        .modifier(PinnedGlass(
+                            shape: Circle(), id: "mic", space: glassSpace,
+                            isDark: isDark, recording: isRecording
+                        ))
                         // Pushed out to the right as the field grows into its place.
                         .transition(.asymmetric(
                             insertion: .scale(scale: 0.4).combined(with: .opacity),
@@ -64,6 +68,7 @@ struct TelegramComposerBar: View {
             }
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.68), value: showsSend)
+        .animation(.spring(response: 0.34, dampingFraction: 0.68), value: pendingBundleCount)
         .animation(.easeOut(duration: 0.18), value: isRecording)
     }
 
@@ -127,25 +132,32 @@ struct TelegramComposerBar: View {
                 .accessibilityIdentifier("chat.send")
                 // Pops up from inside the field with a little overshoot.
                 .transition(.scale(scale: 0.15).combined(with: .opacity))
+            } else if pendingBundleCount > 0 {
+                Button(action: onReleaseBundle) {
+                    Image(systemName: "paperplane")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(palette.text.opacity(0.8))
+                        .frame(width: Self.sendSize.width, height: Self.sendSize.height)
+                        .background(palette.text.opacity(0.09), in: Capsule())
+                        .overlay(alignment: .topTrailing) {
+                            Text("\(pendingBundleCount)")
+                                .font(.system(size: 10, weight: .bold).monospacedDigit())
+                                .foregroundStyle(Color.white)
+                                .padding(.horizontal, 4.5)
+                                .frame(minWidth: 16, minHeight: 16)
+                                .background(palette.accent, in: Capsule())
+                                .offset(x: 4, y: -4)
+                        }
+                        .padding(.trailing, 4)
+                        .frame(height: Self.controlSize)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("让 AI 统一回复上面的 \(pendingBundleCount) 条消息")
+                .transition(.scale(scale: 0.15).combined(with: .opacity))
             }
         }
-        .padding(.trailing, showsSend ? 0 : 4)
-    }
-
-    /// Regular glass flips light/dark with whatever scrolls behind it, which left
-    /// the theme-colored icons unreadable over dark wallpaper. Clear glass does not
-    /// adapt, so a fixed base layer keeps one look, the way Telegram stays light.
-    @ViewBuilder
-    private func glassBackground<S: Shape>(_ shape: S, id: String, recording: Bool = false) -> some View {
-        shape
-            .fill(Color.white.opacity(0.001))
-            .glassEffect(.clear.tint(palette.composer.opacity(isDark ? 0.14 : 0.22)), in: shape)
-            .glassEffectID(id, in: glassSpace)
-            .overlay(shape.fill(recording
-                ? Color.red.opacity(0.78)
-                : (isDark ? Color.black.opacity(0.30) : Color.white.opacity(0.42))))
-            .overlay(shape.stroke(Color.white.opacity(isDark ? 0.16 : 0.65), lineWidth: 0.7))
-            .overlay(shape.stroke(palette.hairline, lineWidth: 0.4))
+        .padding(.trailing, showsSend || pendingBundleCount > 0 ? 0 : 4)
     }
 
     private func circleButton(
@@ -163,5 +175,29 @@ struct TelegramComposerBar: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+    }
+}
+
+/// The glass goes on the control itself, so its icon and text render above the
+/// glass; put behind a control, the container drew the glass on top and refracted them.
+/// Regular glass darkens over dark wallpaper, and the icons use the theme's fixed ink,
+/// so a translucent base between glass and content keeps the light frosted look.
+private struct PinnedGlass<S: Shape>: ViewModifier {
+    let shape: S
+    let id: String
+    let space: Namespace.ID
+    let isDark: Bool
+    var recording = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(base, in: shape)
+            .glassEffect(.regular.interactive(), in: shape)
+            .glassEffectID(id, in: space)
+    }
+
+    private var base: Color {
+        if recording { return Color.red.opacity(0.8) }
+        return isDark ? Color.black.opacity(0.28) : Color.white.opacity(0.42)
     }
 }

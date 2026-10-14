@@ -2151,19 +2151,6 @@ private struct ComposerView: View {
             }
 
             if usesTelegramComposer {
-                if !model.bundledMessageParts.isEmpty && !hasCurrentComposerContent {
-                    Button { Task { await model.sendBundledMessages() } } label: {
-                        Label("让 AI 回复这 \(model.bundledMessageParts.count) 条", systemImage: "paperplane")
-                            .font(.footnote)
-                            .foregroundStyle(palette.text)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(.regularMaterial, in: Capsule())
-                    }
-                    .disabled(model.isSendingBundledMessage || model.hasPendingBundledMessageUploads)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .transition(.scale(scale: 0.8, anchor: .bottomTrailing).combined(with: .opacity))
-                }
                 telegramComposer
             } else if usesWeChatComposer {
                 weChatComposer
@@ -2389,11 +2376,12 @@ private struct ComposerView: View {
             uploading: model.isUploading,
             isRecording: recorder.isRecording, voiceDisabled: model.isUploadingVoice,
             isSending: model.isSendingBundledMessage,
-            // Only the draft decides; staged bundle messages get their own capsule above,
-            // otherwise a waiting bundle kept the send key up and the mic never came back.
-            showsSend: hasCurrentComposerContent,
+            // Only the draft decides; staged bundle messages get the light send key with
+            // a count instead, otherwise a waiting bundle kept the mic from coming back.
+            showsSend: hasCurrentComposerContent || model.isSendingBundledMessage,
             sendIcon: sendButtonIcon,
             sendLabel: sendButtonAccessibilityLabel, sendHint: sendButtonAccessibilityHint,
+            pendingBundleCount: model.hasPendingBundledMessageUploads ? 0 : model.bundledMessageParts.count,
             onAttachments: {
                 isDraftFocused = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
@@ -2408,7 +2396,8 @@ private struct ComposerView: View {
             },
             onSessions: onShowSessions,
             onVoice: { toggleRecording() },
-            onSend: { send() }
+            onSend: { send() },
+            onReleaseBundle: { Task { await model.sendBundledMessages() } }
         )
     }
 
