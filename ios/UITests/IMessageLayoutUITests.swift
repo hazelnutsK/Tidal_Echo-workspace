@@ -31,9 +31,14 @@ final class IMessageLayoutUITests: XCTestCase {
         XCTAssertTrue(appearance.waitForExistence(timeout: 5))
         appearance.tap()
         let jelly = app.buttons["软糖"]
-        for _ in 0..<8 {
+        // The appearance page now carries sliders above the bubble section; a swipe
+        // from the screen center can land on one and drag it instead of scrolling,
+        // so scroll from the list's empty left margin.
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.78))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.30))
+        for _ in 0..<16 {
             if jelly.isHittable { break }
-            app.swipeUp()
+            from.press(forDuration: 0.05, thenDragTo: to)
         }
         XCTAssertTrue(jelly.isHittable)
         XCTAssertTrue(app.buttons["利落"].isHittable)
