@@ -86,6 +86,23 @@ enum ImportedFontStore {
         return records
     }
 
+    /// Removes the file that holds this face. A TTC can carry several faces,
+    /// so every face from that file goes with it; returns their PostScript names.
+    static func deleteFont(postScriptName: String) throws -> [String] {
+        let directory = try fontDirectory()
+        let urls = try FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+        )
+        for url in urls where supportedExtensions.contains(url.pathExtension.lowercased()) {
+            guard let records = try? fontRecords(at: url),
+                  records.contains(where: { $0.postScriptName == postScriptName }) else { continue }
+            CTFontManagerUnregisterFontsForURL(url as CFURL, .process, nil)
+            try FileManager.default.removeItem(at: url)
+            return records.map(\.postScriptName)
+        }
+        return []
+    }
+
     static func sorted(_ fonts: [ImportedChatFont]) -> [ImportedChatFont] {
         fonts.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
     }

@@ -1766,7 +1766,7 @@ private struct MomentsView: View {
     }
 
     private var style: SpaceStyle { SpaceStyle(theme: model.theme) }
-    private var literary: EchoChatFont { SpaceStyle.literaryFont(for: model.chatFont) }
+    private var literary: EchoChatFont { model.journalLiteraryFont }
 
     private var rows: [MomentRow] {
         var result: [MomentRow] = []
@@ -1864,6 +1864,9 @@ private struct MomentsView: View {
         .spacePage(style)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if kind == .journal {
+                ToolbarItem(placement: .topBarTrailing) { JournalFontMenu(model: model) }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingComposer = true } label: { Image(systemName: "plus") }
                     .accessibilityLabel(kind == .moment ? "发一条动态" : "写一篇日志")
@@ -2451,7 +2454,7 @@ private struct JournalDetailView: View {
     }
 
     private var style: SpaceStyle { SpaceStyle(theme: model.theme) }
-    private var literary: EchoChatFont { SpaceStyle.literaryFont(for: model.chatFont) }
+    private var literary: EchoChatFont { model.journalLiteraryFont }
     private var content: JournalContent { JournalContent(post.text) }
 
     var body: some View {
@@ -2557,6 +2560,9 @@ private struct JournalDetailView: View {
         }
         .spacePage(style)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { JournalFontMenu(model: model) }
+        }
         .overlay(alignment: .bottom) {
             if let errorText { SpaceErrorBanner(text: errorText) }
         }
@@ -2627,6 +2633,26 @@ private struct JournalDetailView: View {
         } catch {
             errorText = error.localizedDescription
         }
+    }
+}
+
+/// 日志页右上角的 Aa：只换日志列表和正文的字体，聊天不受影响。
+private struct JournalFontMenu: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Menu {
+            Picker("日志字体", selection: $model.journalFont) {
+                Text("默认（\(model.chatFontTitle(SpaceStyle.literaryFont(for: model.chatFont)))）")
+                    .tag(EchoChatFont?.none)
+                ForEach(model.availableChatFonts) { font in
+                    Text(model.chatFontTitle(font)).tag(EchoChatFont?.some(font))
+                }
+            }
+        } label: {
+            Image(systemName: "textformat")
+        }
+        .accessibilityLabel("日志字体")
     }
 }
 

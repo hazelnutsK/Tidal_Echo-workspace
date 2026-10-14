@@ -556,6 +556,11 @@ private struct AppearanceSettingsView: View {
     @State private var showingFontImporter = false
     @State private var isImportingFont = false
     @State private var fontError: String?
+    @State private var pendingFontDeletion: ImportedChatFont?
+    @State private var namingAppearance = false
+    @State private var appearanceName = ""
+    @State private var pendingAppearance: SavedAppearance?
+    @State private var appearanceError: String?
     private var palette: EchoPalette { model.theme.palette }
 
     var body: some View {
@@ -591,6 +596,36 @@ private struct AppearanceSettingsView: View {
                         }
                     }
                 }
+            }
+
+            Section {
+                ForEach(model.savedAppearances) { saved in
+                    Button { pendingAppearance = saved } label: {
+                        SavedAppearanceRow(model: model, saved: saved, palette: palette)
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) { model.deleteSavedAppearance(saved) } label: {
+                            Label("删除", systemImage: "trash")
+                        }
+                        Button {
+                            do { try model.saveCurrentAppearance(named: saved.name, replacing: saved) }
+                            catch { appearanceError = error.localizedDescription }
+                        } label: {
+                            Label("用现在的覆盖", systemImage: "square.and.arrow.down")
+                        }
+                        .tint(palette.accent)
+                    }
+                }
+                Button {
+                    appearanceName = "我的主题 \(model.savedAppearances.count + 1)"
+                    namingAppearance = true
+                } label: {
+                    Label("把现在的样子存成主题", systemImage: "plus.circle")
+                }
+            } header: {
+                Text("我的主题")
+            } footer: {
+                Text("会存下主题、气泡、字体、颜色和壁纸，头像不变。点一下套用；左滑可以删除，或者用现在的样子覆盖它。")
             }
 
             Section("聊天布局") {
@@ -641,6 +676,21 @@ private struct AppearanceSettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(palette.secondaryText)
 
+                ForEach(model.importedChatFonts) { font in
+                    HStack {
+                        Text(font.displayName)
+                            .font(font.chatFont.font(size: 16, numericWeight: 400))
+                            .foregroundStyle(palette.text)
+                            .lineLimit(1)
+                        Spacer()
+                        Button(role: .destructive) { pendingFontDeletion = font } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("删除字体 \(font.displayName)")
+                    }
+                }
+
                 VStack(alignment: .leading, spacing: 5) {
                     Text("小雪，今天的花很好看。")
                     if model.chatFont.glyphLanguage != nil {
@@ -686,6 +736,34 @@ private struct AppearanceSettingsView: View {
                             .foregroundStyle(palette.secondaryText)
                     }
                 }
+
+                Picker("我的气泡字体", selection: $model.humanChatFont) {
+                    Text("跟聊天字体一样").tag(EchoChatFont?.none)
+                    ForEach(model.availableChatFonts) { font in
+                        Text(model.chatFontTitle(font)).tag(EchoChatFont?.some(font))
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack {
+                        Text("我的气泡字号")
+                        Spacer()
+                        Text("\(Int((model.humanFontScale * 100).rounded()))%")
+                            .foregroundStyle(palette.secondaryText)
+                    }
+                    Slider(value: $model.humanFontScale, in: 0.85...1.35, step: 0.05)
+                        .tint(palette.accent)
+                    Text("上面的“字体大小”管 AI 的气泡和界面里其他文字，这个只管我的气泡。")
+                        .font(.caption2)
+                        .foregroundStyle(palette.secondaryText)
+                }
+
+                Text("这是我发的消息。")
+                    .font(model.resolvedHumanChatFont.font(
+                        size: 17 * model.humanFontScale, numericWeight: model.chatWeight
+                    ))
+                    .foregroundStyle(palette.text)
+                    .padding(.vertical, 5)
             }
 
             Section("AI 回复时机") {
@@ -812,6 +890,58 @@ private struct AppearanceSettingsView: View {
         )) {
             Button("好", role: .cancel) { fontError = nil }
         } message: { Text(fontError ?? "") }
+        .confirmationDialog(
+            "删除字体「\(pendingFontDeletion?.displayName ?? "")」？",
+            isPresented: Binding(
+                get: { pendingFontDeletion != nil },
+                set: { if !$0 { pendingFontDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) {
+                guard let font = pendingFontDeletion else { return }
+                pendingFontDeletion = nil
+                Task {
+                    do { try await model.deleteImportedChatFont(font) }
+                    catch { fontError = error.localizedDescription }
+                }
+            }
+            Button("取消", role: .cancel) { pendingFontDeletion = nil }
+        } message: {
+            Text("正在用它的地方会换回默认字体。TTC 文件里的其他字体会一起删掉。")
+        }
+        .alert("存成主题", isPresented: $namingAppearance) {
+            TextField("名字", text: $appearanceName)
+            Button("存") {
+                let name = appearanceName.trimmingCharacters(in: .whitespacesAndNewlines)
+                do { try model.saveCurrentAppearance(named: name.isEmpty ? "我的主题" : name) }
+                catch { appearanceError = error.localizedDescription }
+            }
+            Button("取消", role: .cancel) {}
+        }
+        .confirmationDialog(
+            "换成「\(pendingAppearance?.name ?? "")」？",
+            isPresented: Binding(
+                get: { pendingAppearance != nil },
+                set: { if !$0 { pendingAppearance = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("换") {
+                guard let saved = pendingAppearance else { return }
+                pendingAppearance = nil
+                withAnimation(.easeInOut(duration: 0.2)) { model.applySavedAppearance(saved) }
+            }
+            Button("取消", role: .cancel) { pendingAppearance = nil }
+        } message: {
+            Text("现在的样子没存的话会被替换掉。")
+        }
+        .alert("主题没存上", isPresented: Binding(
+            get: { appearanceError != nil },
+            set: { if !$0 { appearanceError = nil } }
+        )) {
+            Button("好", role: .cancel) { appearanceError = nil }
+        } message: { Text(appearanceError ?? "") }
         .onChange(of: backgroundItem) { item in loadPhoto(item, kind: .background) }
         .onChange(of: aiAvatarItem) { item in loadPhoto(item, kind: .aiAvatar) }
         .onChange(of: humanAvatarItem) { item in loadPhoto(item, kind: .humanAvatar) }
@@ -1055,6 +1185,8 @@ private struct AppearanceSettingsView: View {
                 model.composerStyle = .original
                 model.chatFont = .system
                 model.fontScale = 1
+                model.humanChatFont = nil
+                model.humanFontScale = 1
                 model.showsAIAvatar = true
                 model.showsHumanAvatar = false
                 model.showsAIBubble = true
@@ -2499,5 +2631,54 @@ private struct ContextSettingsView: View {
         } catch {
             errorText = error.localizedDescription
         }
+    }
+}
+
+private struct SavedAppearanceRow: View {
+    @ObservedObject var model: AppModel
+    let saved: SavedAppearance
+    let palette: EchoPalette
+    @State private var thumbnail: UIImage?
+
+    var body: some View {
+        let v = saved.values
+        let theme = EchoTheme(rawValue: v.theme) ?? .mist
+        HStack(spacing: 12) {
+            ZStack {
+                theme.palette.background
+                if let thumbnail {
+                    Image(uiImage: thumbnail).resizable().scaledToFill()
+                }
+                VStack(spacing: 3) {
+                    swatch(v.aiBubbleColorHex, fallback: theme.palette.aiBubble)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    swatch(v.humanBubbleColorHex, fallback: theme.palette.humanBubble)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .padding(5)
+            }
+            .frame(width: 40, height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(palette.hairline))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(saved.name).foregroundStyle(palette.text)
+                Text(theme.title + (saved.hasBackground ? " · 带壁纸" : ""))
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+            }
+            Spacer()
+        }
+        .task(id: saved) {
+            thumbnail = await model.savedAppearanceBackground(saved)?
+                .byPreparingThumbnail(ofSize: CGSize(width: 120, height: 144))
+        }
+    }
+
+    private func swatch(_ hex: String, fallback: Color) -> some View {
+        Capsule()
+            .fill(Color(hexString: hex) ?? fallback)
+            .frame(width: 18, height: 9)
+            .overlay(Capsule().stroke(Color.black.opacity(0.08), lineWidth: 0.5))
     }
 }

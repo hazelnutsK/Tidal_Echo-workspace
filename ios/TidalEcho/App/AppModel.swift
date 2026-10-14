@@ -58,6 +58,20 @@ final class AppModel: ObservableObject {
     @Published var fontScale: Double {
         didSet { UserDefaults.standard.set(fontScale, forKey: Keys.fontScale) }
     }
+    /// 我的气泡单独的字体；nil＝跟聊天字体一样。字号总是单独存。
+    @Published var humanChatFont: EchoChatFont? {
+        didSet { UserDefaults.standard.set(humanChatFont?.rawValue ?? "", forKey: Keys.humanChatFont) }
+    }
+    @Published var humanFontScale: Double {
+        didSet { UserDefaults.standard.set(humanFontScale, forKey: Keys.humanFontScale) }
+    }
+    /// 朋友圈日志页的字体；nil＝照旧按聊天字体挑一款衬线。
+    @Published var journalFont: EchoChatFont? {
+        didSet { UserDefaults.standard.set(journalFont?.rawValue ?? "", forKey: Keys.journalFont) }
+    }
+    @Published private(set) var savedAppearances: [SavedAppearance] {
+        didSet { SavedAppearanceStore.save(savedAppearances) }
+    }
     @Published var showsAIAvatar: Bool {
         didSet { UserDefaults.standard.set(showsAIAvatar, forKey: Keys.showsAIAvatar) }
     }
@@ -212,6 +226,9 @@ final class AppModel: ObservableObject {
         static let composerStyle = "tidalEcho.composerStyle"
         static let chatFont = "tidalEcho.chatFont"
         static let fontScale = "tidalEcho.fontScale"
+        static let humanChatFont = "tidalEcho.humanChatFont"
+        static let humanFontScale = "tidalEcho.humanFontScale"
+        static let journalFont = "tidalEcho.journalFont"
         static let showsAIAvatar = "tidalEcho.showsAIAvatar"
         static let showsAPIMessageUsage = "tidalEcho.showsAPIMessageUsage"
         static let bubbleOpacity = "tidalEcho.bubbleOpacity"
@@ -295,7 +312,14 @@ final class AppModel: ObservableObject {
         } else {
             chatFont = savedFont
         }
-        fontScale = defaults.object(forKey: Keys.fontScale) == nil ? 1 : defaults.double(forKey: Keys.fontScale)
+        let loadedFontScale = defaults.object(forKey: Keys.fontScale) == nil ? 1 : defaults.double(forKey: Keys.fontScale)
+        fontScale = loadedFontScale
+        humanChatFont = Self.storedFont(defaults.string(forKey: Keys.humanChatFont), imported: loadedFonts)
+        humanFontScale = defaults.object(forKey: Keys.humanFontScale) == nil
+            ? loadedFontScale
+            : defaults.double(forKey: Keys.humanFontScale)
+        journalFont = Self.storedFont(defaults.string(forKey: Keys.journalFont), imported: loadedFonts)
+        savedAppearances = SavedAppearanceStore.load()
         showsAIAvatar = defaults.object(forKey: Keys.showsAIAvatar) == nil ? true : defaults.bool(forKey: Keys.showsAIAvatar)
         showsAPIMessageUsage = defaults.bool(forKey: Keys.showsAPIMessageUsage)
         let legacyBubbleOpacity = defaults.object(forKey: Keys.bubbleOpacity) == nil
@@ -415,6 +439,32 @@ final class AppModel: ObservableObject {
         )
     }
 
+    var resolvedHumanChatFont: EchoChatFont { humanChatFont ?? chatFont }
+    var journalLiteraryFont: EchoChatFont { journalFont ?? SpaceStyle.literaryFont(for: chatFont) }
+
+    /// nil for an empty value, an unknown one, or an imported font that is no longer installed.
+    private static func storedFont(_ raw: String?, imported: [ImportedChatFont]) -> EchoChatFont? {
+        guard let raw, !raw.isEmpty, let font = EchoChatFont(rawValue: raw) else { return nil }
+        if case .imported(let name) = font, !imported.contains(where: { $0.postScriptName == name }) { return nil }
+        return font
+    }
+
+    func deleteImportedChatFont(_ font: ImportedChatFont) async throws {
+        let removed = try await Task.detached(priority: .userInitiated) {
+            try ImportedFontStore.deleteFont(postScriptName: font.postScriptName)
+        }.value
+        let gone = Set(removed + [font.postScriptName])
+        func survives(_ choice: EchoChatFont?) -> Bool {
+            guard case .imported(let name) = choice else { return true }
+            return !gone.contains(name)
+        }
+        if !survives(chatFont) { chatFont = .system }
+        if !survives(humanChatFont) { humanChatFont = nil }
+        if !survives(journalFont) { journalFont = nil }
+        importedChatFonts.removeAll { gone.contains($0.postScriptName) }
+        EchoChatFont.invalidateImportedFaceCache()
+    }
+
     var availableChatFonts: [EchoChatFont] {
         EchoChatFont.allCases + importedChatFonts.map(\.chatFont)
     }
@@ -458,6 +508,7 @@ final class AppModel: ObservableObject {
     private func applyPaperAppearancePreset() {
         chatFont = .rounded
         fontScale = 0.95
+        humanFontScale = fontScale
         chatWeight = 340
         showsAIBubble = true
         bubbleStyle = .classic
@@ -479,6 +530,7 @@ final class AppModel: ObservableObject {
     private func applyHarborAppearancePreset() {
         chatFont = .system
         fontScale = 0.95
+        humanFontScale = fontScale
         chatWeight = 440
         showsAIBubble = true
         showsAIAvatar = false
@@ -502,6 +554,7 @@ final class AppModel: ObservableObject {
     private func applyNestAppearancePreset() {
         chatFont = .anthropicSerif
         fontScale = 1
+        humanFontScale = fontScale
         chatWeight = 400
         showsAIBubble = false
         showsAIAvatar = false
@@ -1490,6 +1543,147 @@ final class AppModel: ObservableObject {
         processTitleColorHex = ""
         timestampColorHex = ""
         UserDefaults.standard.removeObject(forKey: Keys.bubbleTextColor)
+    }
+
+    // MARK: Saved appearances
+
+    private var currentAppearanceValues: SavedAppearance.Values {
+        SavedAppearance.Values(
+            theme: theme.rawValue,
+            chatLayoutStyle: chatLayoutStyle.rawValue,
+            composerStyle: composerStyle.rawValue,
+            chatFont: chatFont.rawValue,
+            humanChatFont: humanChatFont?.rawValue,
+            journalFont: journalFont?.rawValue,
+            fontScale: fontScale,
+            humanFontScale: humanFontScale,
+            chatWeight: chatWeight,
+            showsAIAvatar: showsAIAvatar,
+            showsHumanAvatar: showsHumanAvatar,
+            showsAIBubble: showsAIBubble,
+            aiBubbleOpacity: aiBubbleOpacity,
+            humanBubbleOpacity: humanBubbleOpacity,
+            bubbleRadius: bubbleRadius,
+            bubbleWidthScale: bubbleWidthScale,
+            bubblePaddingX: bubblePaddingX,
+            bubblePaddingY: bubblePaddingY,
+            bubbleBorderWidth: bubbleBorderWidth,
+            bubbleStyle: bubbleStyle.rawValue,
+            bubbleShapeStyle: bubbleShapeStyle.rawValue,
+            liquidGlassStrength: liquidGlassStrength,
+            liquidGlassDispersion: liquidGlassDispersion,
+            liquidGlassRimWidth: liquidGlassRimWidth,
+            liquidGlassMagnify: liquidGlassMagnify,
+            liquidGlassBlur: liquidGlassBlur,
+            liquidGlassSize: liquidGlassSize,
+            aiBubbleColorHex: aiBubbleColorHex,
+            humanBubbleColorHex: humanBubbleColorHex,
+            aiBubbleTextColorHex: aiBubbleTextColorHex,
+            humanBubbleTextColorHex: humanBubbleTextColorHex,
+            processTitleColorHex: processTitleColorHex,
+            timestampColorHex: timestampColorHex,
+            backgroundOpacity: backgroundOpacity,
+            backgroundBlur: backgroundBlur
+        )
+    }
+
+    /// Saves the current look as a new theme, or overwrites `existing` while keeping its name.
+    func saveCurrentAppearance(named name: String, replacing existing: SavedAppearance? = nil) throws {
+        let id = existing?.id ?? UUID()
+        let wallpaperURL = try SavedAppearanceStore.backgroundURL(for: id)
+        var hasBackground = false
+        if backgroundImage != nil,
+           let data = try? Data(contentsOf: Self.appearanceImageURL(.background)) {
+            try data.write(to: wallpaperURL, options: [.atomic, .completeFileProtection])
+            hasBackground = true
+        } else {
+            try? FileManager.default.removeItem(at: wallpaperURL)
+        }
+        let saved = SavedAppearance(
+            id: id,
+            name: existing?.name ?? name,
+            createdAt: existing?.createdAt ?? Date(),
+            updatedAt: Date(),
+            hasBackground: hasBackground,
+            values: currentAppearanceValues
+        )
+        if let index = savedAppearances.firstIndex(where: { $0.id == id }) {
+            savedAppearances[index] = saved
+        } else {
+            savedAppearances.append(saved)
+        }
+    }
+
+    func applySavedAppearance(_ saved: SavedAppearance) {
+        let v = saved.values
+        // Set the theme directly, not through applyTheme: its presets would
+        // overwrite the saved values, and the launch-time preset migration is
+        // marked done so it cannot replace them on the next start either.
+        theme = EchoTheme(rawValue: v.theme) ?? theme
+        for key in [Keys.paperPresetV3, Keys.harborPresetV1, Keys.nestPresetV1] {
+            UserDefaults.standard.set(true, forKey: key)
+        }
+        chatLayoutStyle = ChatLayoutStyle(rawValue: v.chatLayoutStyle) ?? chatLayoutStyle
+        composerStyle = ComposerStyle(rawValue: v.composerStyle) ?? composerStyle
+        chatFont = Self.storedFont(v.chatFont, imported: importedChatFonts) ?? .system
+        humanChatFont = Self.storedFont(v.humanChatFont, imported: importedChatFonts)
+        journalFont = Self.storedFont(v.journalFont, imported: importedChatFonts)
+        fontScale = v.fontScale
+        humanFontScale = v.humanFontScale
+        chatWeight = v.chatWeight
+        showsAIAvatar = v.showsAIAvatar
+        showsHumanAvatar = v.showsHumanAvatar
+        showsAIBubble = v.showsAIBubble
+        aiBubbleOpacity = v.aiBubbleOpacity
+        humanBubbleOpacity = v.humanBubbleOpacity
+        bubbleRadius = v.bubbleRadius
+        bubbleWidthScale = v.bubbleWidthScale
+        bubblePaddingX = v.bubblePaddingX
+        bubblePaddingY = v.bubblePaddingY
+        bubbleBorderWidth = v.bubbleBorderWidth
+        bubbleStyle = EchoBubbleStyle(rawValue: v.bubbleStyle) ?? bubbleStyle
+        bubbleShapeStyle = EchoBubbleShapeStyle(rawValue: v.bubbleShapeStyle) ?? bubbleShapeStyle
+        liquidGlassStrength = v.liquidGlassStrength
+        liquidGlassDispersion = v.liquidGlassDispersion
+        liquidGlassRimWidth = v.liquidGlassRimWidth
+        liquidGlassMagnify = v.liquidGlassMagnify
+        liquidGlassBlur = v.liquidGlassBlur
+        liquidGlassSize = v.liquidGlassSize
+        aiBubbleColorHex = v.aiBubbleColorHex
+        humanBubbleColorHex = v.humanBubbleColorHex
+        aiBubbleTextColorHex = v.aiBubbleTextColorHex
+        humanBubbleTextColorHex = v.humanBubbleTextColorHex
+        processTitleColorHex = v.processTitleColorHex
+        timestampColorHex = v.timestampColorHex
+        backgroundOpacity = v.backgroundOpacity
+        backgroundBlur = v.backgroundBlur
+
+        // Copy the stored file as-is; saveAppearanceImage would re-encode the JPEG each time.
+        if saved.hasBackground,
+           let source = try? SavedAppearanceStore.backgroundURL(for: saved.id),
+           let data = try? Data(contentsOf: source),
+           let image = UIImage(data: data),
+           let target = try? Self.appearanceImageURL(.background),
+           (try? data.write(to: target, options: [.atomic, .completeFileProtection])) != nil {
+            setAppearanceImage(image, kind: .background)
+        } else {
+            removeAppearanceImage(.background)
+        }
+    }
+
+    func deleteSavedAppearance(_ saved: SavedAppearance) {
+        if let url = try? SavedAppearanceStore.backgroundURL(for: saved.id) {
+            try? FileManager.default.removeItem(at: url)
+        }
+        savedAppearances.removeAll { $0.id == saved.id }
+    }
+
+    /// The saved wallpaper, for the theme list thumbnail.
+    func savedAppearanceBackground(_ saved: SavedAppearance) -> UIImage? {
+        guard saved.hasBackground,
+              let url = try? SavedAppearanceStore.backgroundURL(for: saved.id),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
     }
 
     func saveAppearanceImage(data: Data, kind: AppearanceImageKind) throws {

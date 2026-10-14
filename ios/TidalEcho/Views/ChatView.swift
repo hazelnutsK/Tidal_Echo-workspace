@@ -452,8 +452,8 @@ struct ChatView: View {
                         MessageRow(
                             message: message,
                             palette: palette,
-                            chatFont: model.chatFont,
-                            fontScale: model.fontScale,
+                            chatFont: message.author == .human ? model.resolvedHumanChatFont : model.chatFont,
+                            fontScale: message.author == .human ? model.humanFontScale : model.fontScale,
                             showsAIAvatar: model.showsAIAvatar,
                             showsHumanAvatar: model.showsHumanAvatar,
                             aiAvatarImage: model.aiAvatarImage,
