@@ -8,13 +8,14 @@ struct TelegramComposerBar: View {
     let focus: FocusState<Bool>.Binding
     let palette: EchoPalette
     let font: Font
+    let isDark: Bool
     let isOnline: Bool
     let sessionLabel: String
     let uploading: Bool
     let isRecording: Bool
     let voiceDisabled: Bool
     let isSending: Bool
-    /// Text, attachments or staged messages waiting: the send key replaces the mic.
+    /// Text or attachments in the draft: the send key replaces the mic.
     let showsSend: Bool
     let sendIcon: String
     let sendLabel: String
@@ -31,20 +32,21 @@ struct TelegramComposerBar: View {
     static let spacing: CGFloat = 7
     private static let sendSize: CGFloat = 33
 
-    private var glass: Glass { .regular.tint(palette.composer.opacity(0.16)).interactive() }
-
     var body: some View {
         GlassEffectContainer(spacing: Self.spacing) {
             HStack(alignment: .bottom, spacing: Self.spacing) {
                 circleButton("paperclip", label: "添加附件", action: onAttachments)
                     .disabled(uploading)
-                    .glassEffect(glass, in: Circle())
-                    .glassEffectID("attach", in: glassSpace)
+                    .background { glassBackground(Circle(), id: "attach") }
                     .accessibilityIdentifier("chat.add")
 
                 field
-                    .glassEffect(glass, in: RoundedRectangle(cornerRadius: Self.controlSize / 2, style: .continuous))
-                    .glassEffectID("field", in: glassSpace)
+                    .background {
+                        glassBackground(
+                            RoundedRectangle(cornerRadius: Self.controlSize / 2, style: .continuous),
+                            id: "field"
+                        )
+                    }
 
                 if !showsSend {
                     circleButton(isRecording ? "stop.fill" : "mic",
@@ -52,8 +54,7 @@ struct TelegramComposerBar: View {
                                  tint: isRecording ? .white : nil,
                                  action: onVoice)
                         .disabled(voiceDisabled)
-                        .glassEffect(isRecording ? .regular.tint(.red.opacity(0.75)).interactive() : glass, in: Circle())
-                        .glassEffectID("mic", in: glassSpace)
+                        .background { glassBackground(Circle(), id: "mic", recording: isRecording) }
                         // Pushed out to the right as the field grows into its place.
                         .transition(.asymmetric(
                             insertion: .scale(scale: 0.4).combined(with: .opacity),
@@ -128,6 +129,22 @@ struct TelegramComposerBar: View {
             }
         }
         .padding(.trailing, showsSend ? 0 : 4)
+    }
+
+    /// Regular glass flips light/dark with whatever scrolls behind it, which left
+    /// the theme-colored icons unreadable over dark wallpaper. Clear glass does not
+    /// adapt, so a fixed base layer keeps one look, the way Telegram stays light.
+    @ViewBuilder
+    private func glassBackground<S: Shape>(_ shape: S, id: String, recording: Bool = false) -> some View {
+        shape
+            .fill(Color.white.opacity(0.001))
+            .glassEffect(.clear.tint(palette.composer.opacity(isDark ? 0.14 : 0.22)), in: shape)
+            .glassEffectID(id, in: glassSpace)
+            .overlay(shape.fill(recording
+                ? Color.red.opacity(0.78)
+                : (isDark ? Color.black.opacity(0.30) : Color.white.opacity(0.42))))
+            .overlay(shape.stroke(Color.white.opacity(isDark ? 0.16 : 0.65), lineWidth: 0.7))
+            .overlay(shape.stroke(palette.hairline, lineWidth: 0.4))
     }
 
     private func circleButton(

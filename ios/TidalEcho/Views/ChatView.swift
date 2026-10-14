@@ -686,6 +686,12 @@ struct ChatView: View {
                 // effect at the inset would add a second blur boundary.
                 .scrollEdgeEffectHidden(true, for: .top)
                 .scrollDismissesKeyboard(.interactively)
+                // Tapping anywhere in the conversation puts the keyboard (and the composer) away.
+                .simultaneousGesture(TapGesture().onEnded {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+                    )
+                })
                 .refreshable { await model.refresh() }
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentSize.height <= geometry.containerSize.height
@@ -2143,6 +2149,19 @@ private struct ComposerView: View {
             }
 
             if usesTelegramComposer {
+                if !model.bundledMessageParts.isEmpty && !hasCurrentComposerContent {
+                    Button { Task { await model.sendBundledMessages() } } label: {
+                        Label("让 AI 回复这 \(model.bundledMessageParts.count) 条", systemImage: "paperplane")
+                            .font(.footnote)
+                            .foregroundStyle(palette.text)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.regularMaterial, in: Capsule())
+                    }
+                    .disabled(model.isSendingBundledMessage || model.hasPendingBundledMessageUploads)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .transition(.scale(scale: 0.8, anchor: .bottomTrailing).combined(with: .opacity))
+                }
                 telegramComposer
             } else if usesWeChatComposer {
                 weChatComposer
@@ -2363,11 +2382,14 @@ private struct ComposerView: View {
             text: $draftText, focus: $isDraftFocused,
             palette: palette,
             font: model.chatFont.font(size: 17 * model.fontScale, numericWeight: model.chatWeight),
+            isDark: model.theme == .harbor,
             isOnline: model.isStreamConnected, sessionLabel: brainLabel,
             uploading: model.isUploading,
             isRecording: recorder.isRecording, voiceDisabled: model.isUploadingVoice,
             isSending: model.isSendingBundledMessage,
-            showsSend: canSend || model.isSendingBundledMessage,
+            // Only the draft decides; staged bundle messages get their own capsule above,
+            // otherwise a waiting bundle kept the send key up and the mic never came back.
+            showsSend: hasCurrentComposerContent,
             sendIcon: sendButtonIcon,
             sendLabel: sendButtonAccessibilityLabel, sendHint: sendButtonAccessibilityHint,
             onAttachments: {
