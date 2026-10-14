@@ -121,6 +121,8 @@ struct MessageRow: View {
     let showsNestDisclaimer: Bool
     let isIncomingCallActive: Bool
     let onToggleStar: () -> Void
+    /// nil when this message cannot join a multi-selection.
+    let onBeginSelection: (() -> Void)?
     let onSpeak: () -> Void
     let onCopy: () -> Void
     let onEdit: () -> Void
@@ -682,6 +684,9 @@ struct MessageRow: View {
 
     @ViewBuilder
     private var messageActions: some View {
+        if let onBeginSelection {
+            Button(action: onBeginSelection) { Label("多选", systemImage: "checkmark.circle") }
+        }
         if !message.text.isEmpty {
             Button(action: onCopy) { Label("复制", systemImage: "doc.on.doc") }
         }

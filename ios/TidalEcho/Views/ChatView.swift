@@ -25,6 +25,10 @@ struct ChatView: View {
     @State private var editingMessage: ChatMessage?
     @State private var pendingRegeneration: ChatMessage?
     @State private var pendingHide: ChatMessage?
+    /// nil＝没在多选；否则是选中的消息 id。
+    @State private var selectedMessageIDs: Set<Int>?
+    @State private var isWorkingOnSelection = false
+    @State private var shareCard: ShareCardImage?
     @State private var didPositionInitialHistory = false
     @State private var canTriggerOlderHistory = false
     @State private var isPrependingHistory = false
@@ -111,6 +115,25 @@ struct ChatView: View {
                                     )
                                 }
                             }
+                            // Kept alive under the bar so an unsent draft survives multi-select.
+                            .opacity(selectedMessageIDs == nil ? 1 : 0)
+                            .allowsHitTesting(selectedMessageIDs == nil)
+                            .overlay(alignment: .bottom) {
+                                if let selected = selectedMessageIDs {
+                                    MessageSelectionBar(
+                                        count: selected.count,
+                                        allStarred: !selected.isEmpty && selectedMessages.allSatisfy { $0.meta.starred != nil },
+                                        isWorking: isWorkingOnSelection,
+                                        palette: palette,
+                                        onStar: starSelection,
+                                        onShare: shareSelection,
+                                        onCancel: {
+                                            withAnimation(.easeOut(duration: 0.18)) { selectedMessageIDs = nil }
+                                        }
+                                    )
+                                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                                }
+                            }
                     }
                     .zIndex(3)
                 }
@@ -144,6 +167,9 @@ struct ChatView: View {
                 onCall: { showingVoiceCall = true }
             )
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $shareCard) { card in
+            MessageShareSheet(card: card, palette: palette)
         }
         .sheet(isPresented: $showingSearch) {
             MessageSearchView(model: model)
@@ -492,6 +518,12 @@ struct ChatView: View {
                                 && model.streamingReply.isEmpty,
                             isIncomingCallActive: nativeCalls.ringingInvite?.id == message.id
                                 || nativeCalls.acceptedInvite?.id == message.id,
+                            onBeginSelection: Self.isSelectable(message) ? {
+                                UIApplication.shared.sendAction(
+                                    #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+                                )
+                                withAnimation(.easeOut(duration: 0.18)) { selectedMessageIDs = [message.id] }
+                            } : nil,
                             onToggleStar: {
                                 Task {
                                     do {
@@ -552,6 +584,21 @@ struct ChatView: View {
                             },
                             attachmentRequest: model.attachmentRequest
                         )
+                        .allowsHitTesting(selectedMessageIDs == nil)
+                        .padding(.leading, selectedMessageIDs != nil && Self.isSelectable(message) ? 34 : 0)
+                        .overlay(alignment: .leading) {
+                            if let selected = selectedMessageIDs, Self.isSelectable(message) {
+                                selectionMark(isOn: selected.contains(message.id))
+                                    .padding(.leading, 12)
+                            }
+                        }
+                        .overlay {
+                            if selectedMessageIDs != nil, Self.isSelectable(message) {
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { toggleSelection(message.id) }
+                            }
+                        }
                         .id(message.id)
                     }
 
@@ -800,6 +847,105 @@ struct ChatView: View {
     /// freshly allocated `ISO8601DateFormatter`s — quadratic work on every body
     /// pass, which is what made scrolling feel sticky. Build the whole plan in
     /// one forward pass instead.
+    private static func isSelectable(_ message: ChatMessage) -> Bool {
+        message.id > 0 && !["thinking", "act", "call"].contains(message.kind)
+    }
+
+    /// In chat order, whatever order they were tapped in.
+    private var selectedMessages: [ChatMessage] {
+        guard let ids = selectedMessageIDs else { return [] }
+        return model.messages.filter { ids.contains($0.id) }
+    }
+
+    private func selectionMark(isOn: Bool) -> some View {
+        Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+            .font(.system(size: 22, weight: .regular))
+            .foregroundStyle(isOn ? palette.accent : palette.secondaryText.opacity(0.7))
+            .background(Circle().fill(palette.background.opacity(isOn ? 1 : 0.6)).padding(2))
+            .accessibilityLabel(isOn ? "已选中" : "未选中")
+    }
+
+    private func toggleSelection(_ id: Int) {
+        guard var ids = selectedMessageIDs else { return }
+        if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+        selectedMessageIDs = ids
+    }
+
+    private func starSelection() {
+        let targets = selectedMessages
+        guard !targets.isEmpty, !isWorkingOnSelection else { return }
+        let turnOn = !targets.allSatisfy { $0.meta.starred != nil }
+        isWorkingOnSelection = true
+        Task {
+            defer { isWorkingOnSelection = false }
+            for message in targets where (message.meta.starred != nil) != turnOn {
+                do {
+                    try await model.setStar(messageID: message.id, on: turnOn)
+                } catch {
+                    model.errorMessage = error.localizedDescription
+                    return
+                }
+            }
+            withAnimation(.easeOut(duration: 0.18)) { selectedMessageIDs = nil }
+        }
+    }
+
+    private func shareSelection() {
+        let messages = selectedMessages
+        guard !messages.isEmpty, !isWorkingOnSelection else { return }
+        guard messages.count <= 60 else {
+            model.errorMessage = "一张卡片最多放 60 条消息，少选几条再试。"
+            return
+        }
+        isWorkingOnSelection = true
+        let style = MessageShareStyle(
+            palette: palette,
+            aiFont: model.chatFont,
+            humanFont: model.resolvedHumanChatFont,
+            aiScale: model.fontScale,
+            humanScale: model.humanFontScale,
+            weight: model.chatWeight,
+            aiBubble: model.resolvedAIBubbleColor(default: palette.aiBubble),
+            humanBubble: model.resolvedHumanBubbleColor(default: palette.humanBubble),
+            aiText: model.resolvedAIBubbleTextColor(default: palette.text),
+            humanText: model.resolvedHumanBubbleTextColor(default: palette.text),
+            aiOpacity: model.showsAIBubble ? model.aiBubbleOpacity : 0,
+            humanOpacity: model.humanBubbleOpacity,
+            radius: CGFloat(model.bubbleRadius),
+            aiAvatar: model.aiAvatarImage,
+            humanAvatar: model.humanAvatarImage,
+            aiName: model.peerDisplayName,
+            humanName: "小雪"
+        )
+        Task {
+            defer { isWorkingOnSelection = false }
+            let images = await loadShareImages(for: messages)
+            guard let image = MessageShareCard.render(messages: messages, images: images, style: style) else {
+                model.errorMessage = "卡片没画出来，请再试一次。"
+                return
+            }
+            shareCard = ShareCardImage(image: image)
+        }
+    }
+
+    /// Photos must be downloaded before rendering; the card cannot wait for them.
+    private func loadShareImages(for messages: [ChatMessage]) async -> [String: UIImage] {
+        let attachments = messages
+            .flatMap { $0.meta.attachments }
+            .filter { $0.isImage && $0.xhs != true }
+            .prefix(18)
+        var images: [String: UIImage] = [:]
+        for attachment in attachments {
+            guard let request = model.attachmentRequest(for: attachment),
+                  let result = try? await URLSession.shared.data(for: request),
+                  let http = result.1 as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode),
+                  let image = UIImage(data: result.0) else { continue }
+            images[attachment.id] = image
+        }
+        return images
+    }
+
     private var chatRows: [ChatRow] {
         Self.buildRows(
             model.messages,
