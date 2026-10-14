@@ -1,12 +1,12 @@
-# Tidal Echo 私人开发仓库约定
+# Tidal Echo 开发仓库约定
 
-先读 `docs/github-workflow.md`。私人仓库为 `hazelnutsK/Tidal_Echo-workspace`，本地开发目录为 `C:/Users/sxc/Projects/Tidal_Echo-workspace`。
+先读 `docs/github-workflow.md`。开发仓库为 `hazelnutsK/Tidal_Echo-workspace`，2026-10-15 经小雪明确同意改为公开；本地开发目录为 `C:/Users/sxc/Projects/Tidal_Echo-workspace`。
 
-iOS 完整版本来自 `ios-space-redesign` 的 `b86c237`，已在私人仓库中合并，包含软糖/利落气泡、新版开屏/登录/空间、尾页缓存和顶部雾层调整。新任务以保留这些已有功能的私人版本为基底；编译前核对最近成功构建的提交和目标源码，不能再把旧 Windows 运行目录当作最新 iOS 版本。
+iOS 完整版本来自 `ios-space-redesign` 的 `b86c237`，已在此仓库中合并，包含软糖/利落气泡、新版开屏/登录/空间、尾页缓存和顶部雾层调整。新任务以保留这些已有功能的当前版本为基底；编译前核对最近成功构建的提交和目标源码，不能再把旧 Windows 运行目录当作最新 iOS 版本。
 
-小雪要求以后每次修改 Tidal Echo 后及时提交并推送到这个私人仓库，不要只留在本地。除非她明确要求暂不推送，否则检查完成后同步任务分支。不要上传密钥、对话、数据库、实际人设或运行数据。
+小雪要求以后每次修改 Tidal Echo 后及时提交并推送到这个仓库，不要只留在本地。除非她明确要求暂不推送，否则检查完成后同步任务分支。不要上传密钥、对话、数据库、实际人设或运行数据。
 
-源码同步和编译分开：日常代码及时提交、推送到私人仓库。2026-10-15 起，默认 iOS 编译使用公开仓库 `hazelnutsK/Tidal_Echo` 的 `ios-build` 分支；先用 `tools/export_public_ios.py --ref <已推送的源码提交> --publish` 发布只含 iOS 源码的快照，需要编译时再加 `--build` 手动触发公开 `iOS Build`。发布会校验源码边界、凭据和 iOS tree；不会把私人仓库历史或后端推到公开仓库。说“先别编译”时仍同步私人源码，但不运行构建。推送源码不会部署或重启现有聊天服务。
+源码同步和编译分开：日常代码及时提交、推送到 `hazelnutsK/Tidal_Echo-workspace`；需要编译时直接在此仓库手动运行 `iOS Build`，选择已推送的目标分支，不再默认导出到旧公开仓库。说“先别编译”时仍同步源码，但不运行构建。推送源码不会部署或重启现有聊天服务。旧的 `tools/export_public_ios.py` 仅作为可选的历史导出工具保留。
 
 以下是上游部署 SOP，只在用户要求部署时适用。
 
