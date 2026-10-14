@@ -650,6 +650,14 @@ private struct AppearanceSettingsView: View {
                 Text(model.composerStyle.note)
                     .font(.footnote)
                     .foregroundStyle(palette.secondaryText)
+                settingSlider(
+                    title: "最后一条消息离输入栏",
+                    valueText: "\(Int(model.chatBottomGap.rounded()))",
+                    value: $model.chatBottomGap,
+                    range: 0...40,
+                    step: 1,
+                    note: "每种输入栏分别记，切换样式后调的是当前这种。"
+                )
             }
 
             Section("文字") {

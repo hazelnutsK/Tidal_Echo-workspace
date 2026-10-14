@@ -51,6 +51,10 @@ final class AppModel: ObservableObject {
     @Published var composerStyle: ComposerStyle {
         didSet { UserDefaults.standard.set(composerStyle.rawValue, forKey: Keys.composerStyle) }
     }
+    /// 最后一条消息离输入栏多远，每种输入栏各记一份（键是 ComposerStyle 的 rawValue）。
+    @Published private var chatBottomGaps: [String: Double] {
+        didSet { UserDefaults.standard.set(chatBottomGaps, forKey: Keys.chatBottomGaps) }
+    }
     @Published var chatFont: EchoChatFont {
         didSet { UserDefaults.standard.set(chatFont.rawValue, forKey: Keys.chatFont) }
     }
@@ -231,6 +235,7 @@ final class AppModel: ObservableObject {
         static let theme = "tidalEcho.theme"
         static let chatLayoutStyle = "tidalEcho.chatLayoutStyle"
         static let composerStyle = "tidalEcho.composerStyle"
+        static let chatBottomGaps = "tidalEcho.chatBottomGaps"
         static let chatFont = "tidalEcho.chatFont"
         static let fontScale = "tidalEcho.fontScale"
         static let humanChatFont = "tidalEcho.humanChatFont"
@@ -311,6 +316,7 @@ final class AppModel: ObservableObject {
         theme = initialTheme
         chatLayoutStyle = ChatLayoutStyle(rawValue: defaults.string(forKey: Keys.chatLayoutStyle) ?? "") ?? .classic
         composerStyle = ComposerStyle(rawValue: defaults.string(forKey: Keys.composerStyle) ?? "") ?? .original
+        chatBottomGaps = defaults.dictionary(forKey: Keys.chatBottomGaps) as? [String: Double] ?? [:]
         let rawFont = defaults.string(forKey: Keys.chatFont) ?? EchoChatFont.system.rawValue
         let loadedFonts = ImportedFontStore.loadFonts()
         importedChatFonts = loadedFonts
@@ -450,6 +456,12 @@ final class AppModel: ObservableObject {
             blur: liquidGlassBlur,
             size: liquidGlassSize
         )
+    }
+
+    /// The original bar was tuned around 14pt; the floating bars sit closer by default.
+    var chatBottomGap: Double {
+        get { chatBottomGaps[composerStyle.rawValue] ?? (composerStyle == .original ? 14 : 8) }
+        set { chatBottomGaps[composerStyle.rawValue] = newValue }
     }
 
     var resolvedHumanChatFont: EchoChatFont { humanChatFont ?? chatFont }
@@ -1599,7 +1611,8 @@ final class AppModel: ObservableObject {
             processTitleColorHex: processTitleColorHex,
             timestampColorHex: timestampColorHex,
             backgroundOpacity: backgroundOpacity,
-            backgroundBlur: backgroundBlur
+            backgroundBlur: backgroundBlur,
+            chatBottomGap: chatBottomGap
         )
     }
 
@@ -1675,6 +1688,7 @@ final class AppModel: ObservableObject {
         timestampColorHex = v.timestampColorHex
         backgroundOpacity = v.backgroundOpacity
         backgroundBlur = v.backgroundBlur
+        if let gap = v.chatBottomGap { chatBottomGap = gap }
 
         // Copy the stored file as-is; saveAppearanceImage would re-encode the JPEG each time.
         if saved.hasBackground,

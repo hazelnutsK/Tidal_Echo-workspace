@@ -51,6 +51,8 @@ struct SavedAppearance: Codable, Identifiable, Hashable {
         var timestampColorHex: String
         var backgroundOpacity: Double
         var backgroundBlur: Double
+        /// For the saved composer style.
+        var chatBottomGap: Double?
     }
 }
 

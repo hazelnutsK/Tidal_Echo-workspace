@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Telegram 式输入栏：左边回形针，中间胶囊输入框，右边录音。
 /// 一打字，录音按钮被推出去，它的玻璃融进输入框，发送键从框里冒出来，表情键让到它左边。
-/// 尺寸照 Telegram iOS 26 截图量的（390pt 宽）：按钮 40、框高 40、间距 7、框内发送键 33。
+/// 尺寸照 Telegram iOS 26 截图量的（390pt 宽）：按钮 40、框高 40、间距 7、框内发送键 40×32 的扁胶囊。
 struct TelegramComposerBar: View {
     @Binding var text: String
     let focus: FocusState<Bool>.Binding
@@ -30,7 +30,7 @@ struct TelegramComposerBar: View {
 
     static let controlSize: CGFloat = 40
     static let spacing: CGFloat = 7
-    private static let sendSize: CGFloat = 33
+    private static let sendSize = CGSize(width: 40, height: 32)
 
     var body: some View {
         GlassEffectContainer(spacing: Self.spacing) {
@@ -114,9 +114,10 @@ struct TelegramComposerBar: View {
                                 .foregroundStyle(palette.background)
                         }
                     }
-                    .frame(width: Self.sendSize, height: Self.sendSize)
-                    .background(palette.text, in: Circle())
-                    .frame(width: Self.sendSize + 7, height: Self.controlSize)
+                    .frame(width: Self.sendSize.width, height: Self.sendSize.height)
+                    .background(palette.text, in: Capsule())
+                    .padding(.trailing, 4)
+                    .frame(height: Self.controlSize)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

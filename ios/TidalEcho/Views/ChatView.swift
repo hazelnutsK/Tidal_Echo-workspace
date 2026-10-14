@@ -664,7 +664,7 @@ struct ChatView: View {
                             .id("chat-bottom")
                     }
                     .padding(.horizontal, 14)
-                    .padding(.bottom, 14)
+                    .padding(.bottom, CGFloat(model.chatBottomGap))
                     .background {
                         ScrollViewResolver { resolved in
                             if chatScrollView !== resolved { chatScrollView = resolved }
@@ -676,7 +676,9 @@ struct ChatView: View {
                     Color.clear.frame(height: topInset)
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    Color.clear.frame(height: composerHeight)
+                    // The Telegram bar's 6pt top padding is empty space above floating
+                    // controls, so it should not push the last message up as well.
+                    Color.clear.frame(height: max(0, composerHeight - (model.composerStyle == .telegram ? 6 : 0)))
                 }
                 // Extend under the device chrome, but keep the keyboard safe area.
                 // Ignoring all bottom safe areas made the last bubble scroll behind
