@@ -22,8 +22,9 @@ ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="Never")
 
 def git(*args, cwd=None, env=ENV, check=True, data=None):
     cwd = ROOT if cwd is None else cwd
+    timeout = 180 if args and args[0] in ("fetch", "push") else 55
     r = subprocess.run(["git", *args], cwd=cwd, env=env, input=data,
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=55)
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
     if check and r.returncode:
         raise RuntimeError("Git operation failed: " + r.stderr.decode("utf-8", errors="replace")[-1200:])
     return r
@@ -197,17 +198,19 @@ def main():
         for item in record["files"]:
             git("update-index", "--chmod=" + ("+x" if item["mode"] == "100755" else "-x"), "--", item["path"], cwd=dest)
         tree = text("write-tree", cwd=dest)
-        if parent and tree == text("rev-parse", parent + "^{tree}", cwd=dest):
+        needs_push = not (parent and tree == text("rev-parse", parent + "^{tree}", cwd=dest))
+        if not needs_push:
             public_sha = parent
         else:
             command = ["commit-tree", tree, "-m", "Publish iOS source " + sha[:12]]
             if parent:
                 command += ["-p", parent]
             public_sha = text(*command, cwd=dest)
-            # A normal push refuses races; never force-push public history.
-            git("push", "origin", public_sha + ":refs/heads/" + BRANCH, cwd=dest, env=env)
         if text("rev-parse", public_sha + ":ios", cwd=dest) != record["ios_tree"]:
             raise RuntimeError("Public iOS tree differs from the selected source.")
+        if needs_push:
+            # Validate the complete tree before publishing; normal pushes refuse races.
+            git("push", "origin", public_sha + ":refs/heads/" + BRANCH, cwd=dest, env=env)
         published = api("repos/" + PUBLIC + "/git/ref/heads/" + BRANCH, token)
         if published["object"]["sha"] != public_sha:
             raise RuntimeError("Remote public commit verification failed.")
