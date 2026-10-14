@@ -66,6 +66,13 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(humanFontScale, forKey: Keys.humanFontScale) }
     }
     /// 朋友圈日志页的字体；nil＝照旧按聊天字体挑一款衬线。
+    /// 思考/工具标题的字体；nil＝跟聊天字体。
+    @Published var processTitleFont: EchoChatFont? {
+        didSet { UserDefaults.standard.set(processTitleFont?.rawValue ?? "", forKey: Keys.processTitleFont) }
+    }
+    @Published var showsProcessDisclosure: Bool {
+        didSet { UserDefaults.standard.set(showsProcessDisclosure, forKey: Keys.showsProcessDisclosure) }
+    }
     @Published var journalFont: EchoChatFont? {
         didSet { UserDefaults.standard.set(journalFont?.rawValue ?? "", forKey: Keys.journalFont) }
     }
@@ -229,6 +236,8 @@ final class AppModel: ObservableObject {
         static let humanChatFont = "tidalEcho.humanChatFont"
         static let humanFontScale = "tidalEcho.humanFontScale"
         static let journalFont = "tidalEcho.journalFont"
+        static let processTitleFont = "tidalEcho.processTitleFont"
+        static let showsProcessDisclosure = "tidalEcho.showsProcessDisclosure"
         static let showsAIAvatar = "tidalEcho.showsAIAvatar"
         static let showsAPIMessageUsage = "tidalEcho.showsAPIMessageUsage"
         static let bubbleOpacity = "tidalEcho.bubbleOpacity"
@@ -319,6 +328,10 @@ final class AppModel: ObservableObject {
             ? loadedFontScale
             : defaults.double(forKey: Keys.humanFontScale)
         journalFont = Self.storedFont(defaults.string(forKey: Keys.journalFont), imported: loadedFonts)
+        processTitleFont = Self.storedFont(defaults.string(forKey: Keys.processTitleFont), imported: loadedFonts)
+        showsProcessDisclosure = defaults.object(forKey: Keys.showsProcessDisclosure) == nil
+            ? true
+            : defaults.bool(forKey: Keys.showsProcessDisclosure)
         savedAppearances = SavedAppearanceStore.load()
         showsAIAvatar = defaults.object(forKey: Keys.showsAIAvatar) == nil ? true : defaults.bool(forKey: Keys.showsAIAvatar)
         showsAPIMessageUsage = defaults.bool(forKey: Keys.showsAPIMessageUsage)
@@ -461,6 +474,7 @@ final class AppModel: ObservableObject {
         if !survives(chatFont) { chatFont = .system }
         if !survives(humanChatFont) { humanChatFont = nil }
         if !survives(journalFont) { journalFont = nil }
+        if !survives(processTitleFont) { processTitleFont = nil }
         importedChatFonts.removeAll { gone.contains($0.postScriptName) }
         EchoChatFont.invalidateImportedFaceCache()
     }
@@ -1555,6 +1569,8 @@ final class AppModel: ObservableObject {
             chatFont: chatFont.rawValue,
             humanChatFont: humanChatFont?.rawValue,
             journalFont: journalFont?.rawValue,
+            processTitleFont: processTitleFont?.rawValue,
+            showsProcessDisclosure: showsProcessDisclosure,
             fontScale: fontScale,
             humanFontScale: humanFontScale,
             chatWeight: chatWeight,
@@ -1628,6 +1644,8 @@ final class AppModel: ObservableObject {
         chatFont = Self.storedFont(v.chatFont, imported: importedChatFonts) ?? .system
         humanChatFont = Self.storedFont(v.humanChatFont, imported: importedChatFonts)
         journalFont = Self.storedFont(v.journalFont, imported: importedChatFonts)
+        processTitleFont = Self.storedFont(v.processTitleFont, imported: importedChatFonts)
+        showsProcessDisclosure = v.showsProcessDisclosure ?? true
         fontScale = v.fontScale
         humanFontScale = v.humanFontScale
         chatWeight = v.chatWeight

@@ -635,6 +635,9 @@ extension EnvironmentValues {
     /// 外观里自定义的思考/工具标题色和时间戳色，ChatView 统一注入；nil＝各处沿用主题色。
     @Entry var processTitleColor: Color? = nil
     @Entry var timestampColor: Color? = nil
+    /// 思考/工具标题单独的字体（nil＝跟聊天字体），以及标题旁的展开小箭头要不要画。
+    @Entry var processTitleFont: EchoChatFont? = nil
+    @Entry var showsProcessDisclosure: Bool = true
     /// 外观里“气泡内边距”拉条：width＝左右、height＝上下，在各主题基准值上加减。
     @Entry var bubblePaddingOffset: CGSize = .zero
 }

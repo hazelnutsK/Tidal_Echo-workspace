@@ -159,6 +159,8 @@ struct ChatView: View {
         }
         .environment(\.processTitleColor, model.customProcessTitleColor)
         .environment(\.timestampColor, model.customTimestampColor)
+        .environment(\.processTitleFont, model.processTitleFont)
+        .environment(\.showsProcessDisclosure, model.showsProcessDisclosure)
         .environment(\.bubblePaddingOffset, model.bubblePaddingOffset)
         .sheet(isPresented: $showingSettings) {
             SettingsView(

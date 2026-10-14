@@ -1672,6 +1672,8 @@ private struct MessageTimerCard: View {
 
 private struct ProcessRow: View {
     @Environment(\.processTitleColor) private var processTitleColor
+    @Environment(\.processTitleFont) private var processTitleFont
+    @Environment(\.showsProcessDisclosure) private var showsProcessDisclosure
     let message: ChatMessage
     let palette: EchoPalette
     let chatFont: EchoChatFont
@@ -1749,6 +1751,7 @@ private struct ProcessRow: View {
 
     private var isThinking: Bool { message.kind == "thinking" }
     private var titleColor: Color { processTitleColor ?? palette.secondaryText }
+    private var titleFont: EchoChatFont { processTitleFont ?? chatFont }
     private var canExpand: Bool { isThinking ? !message.text.isEmpty : !message.meta.steps.isEmpty }
 
     /// 「这轮我想起了东西」——浮现本身是隐形的（旧记忆只垫在他眼前），
@@ -1827,7 +1830,7 @@ private struct ProcessRow: View {
                     .offset(y: 2)
             }
         }
-        .font(chatFont.font(
+        .font(titleFont.font(
             size: (isNest ? 13 : 12.5) * fontScale,
             weight: isNest ? .regular : .medium
         ))
@@ -1842,7 +1845,9 @@ private struct ProcessRow: View {
 
     @ViewBuilder
     private var upperTailThinkingDisclosure: some View {
-        if isPaper {
+        if !showsProcessDisclosure {
+            EmptyView()
+        } else if isPaper {
             Image(systemName: "play.fill")
                 .font(.system(size: 7.5, weight: .bold))
                 .rotationEffect(.degrees(expanded ? 90 : 0))
@@ -1858,11 +1863,13 @@ private struct ProcessRow: View {
 
     private var mistTrigger: some View {
         HStack(spacing: 6) {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 8, weight: .semibold))
+            if showsProcessDisclosure {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
+            }
             Text(isThinking ? "Thinking" : "Action")
         }
-        .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+        .font(titleFont.font(size: 12.5 * fontScale, weight: .medium))
         .foregroundStyle(titleColor)
         .padding(.vertical, 2)
     }
@@ -1881,10 +1888,12 @@ private struct ProcessRow: View {
             Text(isThinking ? nestThinkingTitle : "查看工具调用")
                 .lineLimit(1)
             Spacer(minLength: 4)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 10, weight: .semibold))
+            if showsProcessDisclosure {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+            }
         }
-        .font(chatFont.font(size: 13 * fontScale, weight: .regular))
+        .font(titleFont.font(size: 13 * fontScale, weight: .regular))
         .foregroundStyle(titleColor)
         .padding(.vertical, 3)
     }
@@ -1908,11 +1917,13 @@ private struct ProcessRow: View {
             Image(systemName: isThinking ? "heart.fill" : "wrench")
                 .font(.system(size: isThinking ? 11.5 : 11, weight: .medium))
             Text(isThinking ? "Thinking" : "Action")
-            Image(systemName: "chevron.down")
-                .font(.system(size: 8, weight: .semibold))
-                .rotationEffect(.degrees(expanded ? 180 : 0))
+            if showsProcessDisclosure {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .rotationEffect(.degrees(expanded ? 180 : 0))
+            }
         }
-        .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+        .font(titleFont.font(size: 12.5 * fontScale, weight: .medium))
         .foregroundStyle(titleColor)
         .padding(.vertical, 2)
     }
@@ -1921,16 +1932,18 @@ private struct ProcessRow: View {
         HStack(spacing: 7) {
             if isThinking {
                 Text("THINKING")
-                Image(systemName: "play.fill")
-                    .font(.system(size: 7.5, weight: .bold))
-                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                if showsProcessDisclosure {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 7.5, weight: .bold))
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                }
             } else {
                 Image(systemName: "wrench")
                     .font(.system(size: 11, weight: .medium))
                 Text("Action")
             }
         }
-        .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+        .font(titleFont.font(size: 12.5 * fontScale, weight: .medium))
         .foregroundStyle(titleColor)
         .padding(.horizontal, isPaper ? 0 : 11)
         .padding(.vertical, isPaper ? 2 : 4)
@@ -2273,6 +2286,8 @@ private struct ToolStepPreview: View {
 
 struct StreamingProcessRow: View {
     @Environment(\.processTitleColor) private var processTitleColor
+    @Environment(\.processTitleFont) private var processTitleFont
+    @Environment(\.showsProcessDisclosure) private var showsProcessDisclosure
     let title: String
     let text: String
     let palette: EchoPalette
@@ -2300,7 +2315,7 @@ struct StreamingProcessRow: View {
                             showsShadow: true
                         )
                         Text("Thinking…")
-                            .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                            .font(titleFont.font(size: 12.5 * fontScale, weight: .medium))
                             .foregroundStyle(titleColor)
                             .offset(y: 2)
                     }
@@ -2318,7 +2333,7 @@ struct StreamingProcessRow: View {
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Thinking…")
-                        .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                        .font(titleFont.font(size: 12.5 * fontScale, weight: .medium))
                         .foregroundStyle(titleColor)
                     streamingText
                         .lineLimit(2)
@@ -2333,7 +2348,7 @@ struct StreamingProcessRow: View {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 8) {
                     Text(title)
-                        .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                        .font(titleFont.font(size: 12.5 * fontScale, weight: .medium))
                     Spacer(minLength: 12)
                     Image(systemName: "heart.fill")
                         .font(.system(size: 11, weight: .medium))
@@ -2357,7 +2372,7 @@ struct StreamingProcessRow: View {
         } else if isMist {
             VStack(alignment: .leading, spacing: 7) {
                 Text("Thinking…")
-                    .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                    .font(titleFont.font(size: 12.5 * fontScale, weight: .medium))
                     .foregroundStyle(titleColor)
                 streamingText
                     .lineLimit(2)
@@ -2370,11 +2385,13 @@ struct StreamingProcessRow: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 7) {
                     Text("THINKING")
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 7.5, weight: .bold))
-                        .rotationEffect(.degrees(90))
+                    if showsProcessDisclosure {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 7.5, weight: .bold))
+                            .rotationEffect(.degrees(90))
+                    }
                 }
-                .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                .font(titleFont.font(size: 12.5 * fontScale, weight: .medium))
                 .foregroundStyle(titleColor)
                 .padding(.horizontal, isPaper ? 0 : 11)
                 .padding(.vertical, isPaper ? 2 : 4)
@@ -2425,6 +2442,7 @@ struct StreamingProcessRow: View {
 
     private var isHarbor: Bool { !isPaper && !isMist && !isNest }
     private var titleColor: Color { processTitleColor ?? palette.secondaryText }
+    private var titleFont: EchoChatFont { processTitleFont ?? chatFont }
 }
 
 struct StreamingReplyRow: View {

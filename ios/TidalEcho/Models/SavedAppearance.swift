@@ -49,6 +49,8 @@ struct SavedAppearance: Codable, Identifiable, Hashable {
         var timestampColorHex: String
         var backgroundOpacity: Double
         var backgroundBlur: Double
+        var processTitleFont: String?
+        var showsProcessDisclosure: Bool?
     }
 }
 

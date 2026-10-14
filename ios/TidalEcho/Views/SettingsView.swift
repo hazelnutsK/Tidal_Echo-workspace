@@ -1051,6 +1051,26 @@ private struct AppearanceSettingsView: View {
                 set: { model.setProcessTitleColor($0) }
             ), supportsOpacity: false)
 
+            Picker("思考与工具标题字体", selection: $model.processTitleFont) {
+                Text("跟聊天字体一样").tag(EchoChatFont?.none)
+                ForEach(model.availableChatFonts) { font in
+                    Text(model.chatFontTitle(font)).tag(EchoChatFont?.some(font))
+                }
+            }
+
+            Toggle("标题旁的展开小箭头", isOn: $model.showsProcessDisclosure)
+
+            HStack(spacing: 6) {
+                if model.showsProcessDisclosure {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                }
+                Text("Thinking")
+                    .font((model.processTitleFont ?? model.chatFont).font(size: 13 * model.fontScale, weight: .medium))
+            }
+            .foregroundStyle(model.customProcessTitleColor ?? palette.secondaryText)
+            .padding(.vertical, 3)
+
             ColorPicker("时间戳颜色", selection: Binding(
                 get: { model.customTimestampColor ?? palette.secondaryText },
                 set: { model.setTimestampColor($0) }
@@ -1187,6 +1207,8 @@ private struct AppearanceSettingsView: View {
                 model.fontScale = 1
                 model.humanChatFont = nil
                 model.humanFontScale = 1
+                model.processTitleFont = nil
+                model.showsProcessDisclosure = true
                 model.showsAIAvatar = true
                 model.showsHumanAvatar = false
                 model.showsAIBubble = true
