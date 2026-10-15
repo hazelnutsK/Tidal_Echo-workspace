@@ -59,10 +59,15 @@ struct TelegramComposerBar: View {
                             shape: Circle(), id: "mic", space: glassSpace,
                             isDark: isDark, recording: isRecording
                         ))
+                        // The glass has its own transition: left on the default matched
+                        // geometry it found no partner, shrank to a dot and sat at the
+                        // right edge until the spring settled. It fades with the icon instead.
+                        .glassEffectTransition(.materialize)
                         // Pushed out to the right as the field grows into its place.
                         .transition(.asymmetric(
                             insertion: .scale(scale: 0.4).combined(with: .opacity),
                             removal: .scale(scale: 0.5).combined(with: .opacity).combined(with: .offset(x: 22))
+                                .animation(.easeOut(duration: 0.16))
                         ))
                 }
             }

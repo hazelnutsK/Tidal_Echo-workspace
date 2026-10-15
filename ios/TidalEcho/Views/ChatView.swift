@@ -448,10 +448,18 @@ struct ChatView: View {
         }
     }
 
+    /// The original bar keeps its old look: its marker used to sit inside the row
+    /// spacing, so its saved gaps already assumed that extra 2pt + spacing.
+    private var listBottomPadding: CGFloat {
+        let gap = CGFloat(model.chatBottomGap)
+        return model.composerStyle == .original ? gap + 2 + (isNest ? 13 : 9) : gap
+    }
+
     private func messageList(topInset: CGFloat) -> some View {
         ScrollViewReader { proxy in
             GeometryReader { viewport in
                 ScrollView {
+                    VStack(spacing: 0) {
                     LazyVStack(spacing: isNest ? 13 : 9) {
                     if canTriggerOlderHistory && model.canLoadOlderHistory {
                         HStack(spacing: 8) {
@@ -658,13 +666,16 @@ struct ChatView: View {
                                 && !historyEndsWithAIThinkingHeader
                         )
                     }
+                    }
 
+                        // Outside the row spacing, so the gap slider alone sets how far
+                        // the last message sits from the composer.
                         Color.clear
-                            .frame(height: 2)
+                            .frame(height: 0)
                             .id("chat-bottom")
                     }
                     .padding(.horizontal, 14)
-                    .padding(.bottom, CGFloat(model.chatBottomGap))
+                    .padding(.bottom, listBottomPadding)
                     .background {
                         ScrollViewResolver { resolved in
                             if chatScrollView !== resolved { chatScrollView = resolved }
@@ -2291,9 +2302,10 @@ private struct ComposerView: View {
             ? telegramSideInset
             : (usesWeChatComposer ? 0 : (usesIMessageLayout ? iMessageMetrics.composerInset : (isNest ? 14 : 12))))
         .padding(.top, usesTelegramComposer ? 6 : (usesWeChatComposer ? 0 : (usesIMessageLayout ? 6 : (isNest ? 4 : 7))))
-        .padding(.bottom, usesTelegramComposer ? (isDraftFocused ? 8 : 0) : (usesWeChatComposer ? 0 : (usesIMessageLayout ? 4 : (isNest ? 5 : 7))))
         // Telegram sits a little into the home-indicator area while the keyboard is down.
-        .offset(y: usesTelegramComposer && !isDraftFocused ? 5 : 0)
+        // A negative padding rather than an offset, so the measured composer height
+        // drops with it and the last message follows the field down.
+        .padding(.bottom, usesTelegramComposer ? (isDraftFocused ? 8 : -5) : (usesWeChatComposer ? 0 : (usesIMessageLayout ? 4 : (isNest ? 5 : 7))))
         .animation(.spring(response: 0.36, dampingFraction: 0.86), value: usesTelegramComposer && isDraftFocused)
         .task { await loadBrain() }
         .onDisappear { recorder.cancel() }
