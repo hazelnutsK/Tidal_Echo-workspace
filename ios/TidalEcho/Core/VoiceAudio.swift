@@ -32,10 +32,8 @@ final class VoicePlaybackCenter: NSObject, ObservableObject, AVAudioPlayerDelega
         currentID = id
         defer { isLoading = false }
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                throw APIError.invalidResponse
-            }
+            // Usually already fetched when the bubble measured its duration.
+            let data = try await VoiceClipStore.shared.data(id: id, request: request)
             try play(data: data, id: id)
         } catch {
             reset()
@@ -97,6 +95,65 @@ final class VoicePlaybackCenter: NSObject, ObservableObject, AVAudioPlayerDelega
         isLoading = false
         progress = 0
         duration = 0
+    }
+}
+
+/// Voice notes carry no duration from the relay, so a bubble fetches its clip once
+/// to measure it. The clip stays in memory for the play button, and the duration is
+/// kept across launches so old bubbles show their length without another download.
+@MainActor
+final class VoiceClipStore {
+    static let shared = VoiceClipStore()
+
+    private static let durationsKey = "tidalEcho.voiceDurations"
+    private var durations: [String: Double]
+    private let clips = NSCache<NSString, NSData>()
+    private var inflight: [String: Task<Data, Error>] = [:]
+
+    private init() {
+        durations = UserDefaults.standard.dictionary(forKey: Self.durationsKey) as? [String: Double] ?? [:]
+        clips.totalCostLimit = 24 * 1024 * 1024
+    }
+
+    func cachedDuration(id: String) -> TimeInterval? { durations[id] }
+
+    func duration(id: String, request: URLRequest) async -> TimeInterval? {
+        if let known = durations[id] { return known }
+        guard let data = try? await data(id: id, request: request) else { return nil }
+        return durations[id]
+            ?? (try? AVAudioPlayer(data: data)).map { record(duration: $0.duration, id: id) }
+    }
+
+    func data(id: String, request: URLRequest) async throws -> Data {
+        if let cached = clips.object(forKey: id as NSString) { return cached as Data }
+        if let running = inflight[id] { return try await running.value }
+        let task = Task<Data, Error> {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw APIError.invalidResponse
+            }
+            return data
+        }
+        inflight[id] = task
+        defer { inflight[id] = nil }
+        let data = try await task.value
+        clips.setObject(data as NSData, forKey: id as NSString, cost: data.count)
+        if durations[id] == nil, let player = try? AVAudioPlayer(data: data) {
+            record(duration: player.duration, id: id)
+        }
+        return data
+    }
+
+    @discardableResult
+    private func record(duration: TimeInterval, id: String) -> TimeInterval {
+        guard duration > 0 else { return duration }
+        durations[id] = duration
+        // A few bytes each; drop an arbitrary half if it ever grows large.
+        if durations.count > 2000 {
+            durations = Dictionary(uniqueKeysWithValues: durations.shuffled().prefix(1000).map { ($0.key, $0.value) })
+        }
+        UserDefaults.standard.set(durations, forKey: Self.durationsKey)
+        return duration
     }
 }
 

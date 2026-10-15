@@ -84,6 +84,7 @@ private enum IncomingCallCardState: Equatable {
 struct MessageRow: View {
     @Environment(\.timestampColor) private var timestampColor
     @Environment(\.bubblePaddingOffset) private var bubblePaddingOffset
+    @State private var showsVoiceTranscript = false
     let message: ChatMessage
     let palette: EchoPalette
     let chatFont: EchoChatFont
@@ -267,14 +268,23 @@ struct MessageRow: View {
                         }
 
                         ForEach(nonImageAttachments) { attachment in
-                            AttachmentView(
-                                attachment: attachment,
-                                request: attachmentRequest(attachment),
-                                palette: palette
-                            )
+                            if isVoiceNote(attachment) {
+                                VoiceAttachmentView(
+                                    attachment: attachment,
+                                    request: attachmentRequest(attachment),
+                                    palette: palette,
+                                    transcriptShown: hidesVoiceTranscript ? $showsVoiceTranscript : nil
+                                )
+                            } else {
+                                AttachmentView(
+                                    attachment: attachment,
+                                    request: attachmentRequest(attachment),
+                                    palette: palette
+                                )
+                            }
                         }
 
-                        if !displayedMessageText.isEmpty {
+                        if !displayedMessageText.isEmpty && (!hidesVoiceTranscript || showsVoiceTranscript) {
                             MarkdownMessageText(
                                 source: displayedMessageText,
                                 palette: palette,
@@ -611,6 +621,17 @@ struct MessageRow: View {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return text
+    }
+
+    /// A spoken note rather than a shared audio file: her recordings arrive as voice
+    /// messages, mine carry the flag on the attachment.
+    private func isVoiceNote(_ attachment: Attachment) -> Bool {
+        attachment.isAudio && (attachment.voice == true || message.kind == "voice")
+    }
+
+    /// The words of a voice note stay folded behind the bar until asked for.
+    private var hidesVoiceTranscript: Bool {
+        !displayedMessageText.isEmpty && nonImageAttachments.contains(where: isVoiceNote)
     }
 
     private var displayedReaction: String? {
@@ -2909,70 +2930,130 @@ private struct QuickLookPreview: UIViewControllerRepresentable {
     }
 }
 
+/// A voice note drawn straight onto its bubble, Telegram-like: a solid round play key,
+/// a waveform as long as the clip, and its length counting along while it plays.
+/// It takes the bubble's text color, so it reads on any theme and bubble color.
 struct VoiceAttachmentView: View {
     let attachment: Attachment
     let request: URLRequest?
     let palette: EchoPalette
+    /// When the message's words sit behind the bar, the toggle that shows them.
+    var transcriptShown: Binding<Bool>? = nil
     @ObservedObject private var playback = VoicePlaybackCenter.shared
     @State private var scrubProgress: Double?
+    @State private var duration: TimeInterval?
+
+    private static let keySize: CGFloat = 30
+    private static let waveHeight: CGFloat = 22
 
     private var isCurrent: Bool { playback.currentID == attachment.id }
+    private var isPlaying: Bool { isCurrent && playback.isPlaying }
     private var displayedProgress: Double {
         scrubProgress ?? (isCurrent ? playback.progress : 0)
     }
 
+    /// Longer clips get a longer bar, so the waveform never trails off into blank space.
+    private var waveWidth: CGFloat {
+        guard let duration else { return 96 }
+        return min(132, max(52, 44 + CGFloat(duration) * 4.5))
+    }
+
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 9) {
             Button {
                 guard let request else { return }
                 Task { await playback.toggle(id: attachment.id, request: request) }
             } label: {
-                ZStack {
-                    Circle().fill(palette.accent.opacity(0.15))
-                    if isCurrent && playback.isLoading {
-                        ProgressView().controlSize(.small).tint(palette.accent)
-                    } else {
-                        Image(systemName: isCurrent && playback.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(palette.accent)
-                    }
-                }
-                .frame(width: 32, height: 32)
+                playKey
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(isCurrent && playback.isPlaying ? "暂停语音" : "播放语音")
+            .accessibilityLabel(isPlaying ? "暂停语音" : "播放语音")
 
-            VoiceWaveform(
-                progress: displayedProgress,
-                isPlaying: isCurrent && playback.isPlaying && scrubProgress == nil,
-                palette: palette
-            )
-            .frame(width: 86, height: 28)
-            .contentShape(Rectangle())
-            .gesture(waveformDragGesture)
-            .accessibilityElement()
-            .accessibilityLabel("语音播放进度")
-            .accessibilityValue("百分之 \(Int(displayedProgress * 100))")
-            .accessibilityAdjustableAction { direction in
-                guard isCurrent else { return }
-                let delta: Double
-                switch direction {
-                case .increment: delta = 0.05
-                case .decrement: delta = -0.05
-                @unknown default: return
+            VoiceWaveform(seed: attachment.id, progress: displayedProgress)
+                .frame(width: waveWidth, height: Self.waveHeight)
+                .contentShape(Rectangle())
+                .gesture(waveformDragGesture)
+                .accessibilityElement()
+                .accessibilityLabel("语音播放进度")
+                .accessibilityValue("百分之 \(Int(displayedProgress * 100))")
+                .accessibilityAdjustableAction { direction in
+                    guard isCurrent else { return }
+                    let delta: Double
+                    switch direction {
+                    case .increment: delta = 0.05
+                    case .decrement: delta = -0.05
+                    @unknown default: return
+                    }
+                    playback.seek(id: attachment.id, toProgress: playback.progress + delta)
                 }
-                playback.seek(id: attachment.id, toProgress: playback.progress + delta)
-            }
 
             Text(playbackLabel)
-                .font(.caption)
-                .foregroundStyle(palette.secondaryText)
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .frame(minWidth: 30, maxWidth: 92, alignment: .trailing)
+                .fixedSize()
+                .contentTransition(.numericText())
+
+            if let transcriptShown {
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
+                        transcriptShown.wrappedValue.toggle()
+                    }
+                } label: {
+                    Group {
+                        if transcriptShown.wrappedValue {
+                            Image(systemName: "chevron.up").font(.system(size: 10, weight: .bold))
+                        } else {
+                            Text("文").font(.system(size: 11, weight: .semibold))
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(transcriptShown.wrappedValue ? "收起文字" : "展开文字")
+            }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(palette.composer.opacity(0.72), in: Capsule())
+        .animation(.easeOut(duration: 0.2), value: waveWidth)
+        .task(id: attachment.id) {
+            if let known = VoiceClipStore.shared.cachedDuration(id: attachment.id) {
+                duration = known
+            } else if let request {
+                duration = await VoiceClipStore.shared.duration(id: attachment.id, request: request)
+            }
+        }
+        .onChange(of: playback.duration) { value in
+            if isCurrent && value > 0 && duration == nil { duration = value }
+        }
+    }
+
+    /// The glyph is cut out of a solid disc, so the bubble shows through it
+    /// whatever color the bubble is.
+    private var playKey: some View {
+        ZStack {
+            Circle().fill(.primary)
+            Group {
+                if isCurrent && playback.isLoading {
+                    ProgressView().controlSize(.mini)
+                } else if isPlaying {
+                    HStack(spacing: 3.5) {
+                        RoundedRectangle(cornerRadius: 1.5, style: .continuous).frame(width: 3.5, height: 12)
+                        RoundedRectangle(cornerRadius: 1.5, style: .continuous).frame(width: 3.5, height: 12)
+                    }
+                } else {
+                    RoundedTriangle(cornerRadius: 2.2)
+                        .frame(width: 11, height: 12.5)
+                        // A triangle's visual center sits right of its box.
+                        .offset(x: 1.2)
+                }
+            }
+            .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .frame(width: Self.keySize, height: Self.keySize)
+        .contentShape(Circle())
     }
 
     private var waveformDragGesture: some Gesture {
@@ -3002,7 +3083,7 @@ struct VoiceAttachmentView: View {
     }
 
     private func waveformProgress(at x: CGFloat) -> Double {
-        Double(min(86, max(0, x)) / 86)
+        Double(min(waveWidth, max(0, x)) / waveWidth)
     }
 
     private func voiceTime(_ value: TimeInterval) -> String {
@@ -3010,45 +3091,79 @@ struct VoiceAttachmentView: View {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
+    /// The clip's length at rest; once started, the time it has reached.
     private var playbackLabel: String {
-        if let scrubProgress, isCurrent, playback.duration > 0 {
-            return voiceTime(playback.duration * scrubProgress)
+        let total = isCurrent && playback.duration > 0 ? playback.duration : (duration ?? 0)
+        if total > 0 && (isCurrent || scrubProgress != nil) {
+            return voiceTime(total * displayedProgress)
         }
-        if isCurrent && playback.duration > 0 { return voiceTime(playback.duration) }
-        if attachment.voice == true || attachment.name.lowercased().contains("voice") { return "语音" }
-        return attachment.name
+        if total > 0 { return voiceTime(total) }
+        return "语音"
     }
 }
 
-private struct VoiceWaveform: View {
-    let progress: Double
-    let isPlaying: Bool
-    let palette: EchoPalette
+/// A play triangle with its three corners rounded off.
+private struct RoundedTriangle: Shape {
+    var cornerRadius: CGFloat
 
-    private let barHeights: [CGFloat] = [
-        8, 15, 21, 13, 18, 10, 16, 22, 12, 19, 9,
-        17, 14, 20, 11, 18, 13, 21, 10, 16, 12, 8
-    ]
+    func path(in rect: CGRect) -> Path {
+        let top = CGPoint(x: rect.minX, y: rect.minY)
+        let tip = CGPoint(x: rect.maxX, y: rect.midY)
+        let bottom = CGPoint(x: rect.minX, y: rect.maxY)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addArc(tangent1End: top, tangent2End: tip, radius: cornerRadius)
+        path.addArc(tangent1End: tip, tangent2End: bottom, radius: cornerRadius)
+        path.addArc(tangent1End: bottom, tangent2End: top, radius: cornerRadius)
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Bars spread across the whole width, their heights fixed per clip so each note
+/// has its own shape. Played bars take the full text color, the rest a faint one.
+private struct VoiceWaveform: View {
+    let seed: String
+    let progress: Double
+
+    private static let barWidth: CGFloat = 2.5
+    private static let gap: CGFloat = 1.8
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 12.0, paused: !isPlaying)) { timeline in
-            let phase = timeline.date.timeIntervalSinceReferenceDate
-            HStack(alignment: .center, spacing: 2) {
-                ForEach(barHeights.indices, id: \.self) { index in
-                    let threshold = (Double(index) + 0.5) / Double(barHeights.count)
-                    Capsule()
-                        .fill(threshold <= progress ? palette.accent : palette.secondaryText.opacity(0.32))
-                        .frame(width: 2.2, height: animatedHeight(at: index, phase: phase))
-                }
+        Canvas { context, size in
+            let count = max(4, Int((size.width + Self.gap) / (Self.barWidth + Self.gap)))
+            // Stretch the gaps so the last bar lands exactly on the right edge.
+            let step = count > 1 ? (size.width - Self.barWidth) / CGFloat(count - 1) : 0
+            let levels = Self.levels(seed: seed, count: count)
+            for index in 0..<count {
+                let height = max(3, size.height * levels[index])
+                let x = CGFloat(index) * step
+                let bar = Path(roundedRect: CGRect(
+                    x: x, y: (size.height - height) / 2,
+                    width: Self.barWidth, height: height
+                ), cornerRadius: Self.barWidth / 2)
+                let played = (x + Self.barWidth / 2) / size.width <= progress
+                let shading: GraphicsContext.Shading = played
+                    ? .style(HierarchicalShapeStyle.primary)
+                    : .style(HierarchicalShapeStyle.tertiary)
+                context.fill(bar, with: shading)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
     }
 
-    private func animatedHeight(at index: Int, phase: TimeInterval) -> CGFloat {
-        guard isPlaying else { return barHeights[index] }
-        let wave = sin(phase * 5.2 + Double(index) * 0.78)
-        return max(6, barHeights[index] + CGFloat(wave) * 2.4)
+    /// Speech-like levels: a seeded random walk, eased in at both ends.
+    private static func levels(seed: String, count: Int) -> [CGFloat] {
+        var state = seed.utf8.reduce(UInt64(1469598103934665603)) { ($0 ^ UInt64($1)) &* 1099511628211 }
+        func next() -> CGFloat {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            return CGFloat((state >> 33) % 1000) / 1000
+        }
+        var level: CGFloat = 0.45
+        return (0..<count).map { index in
+            level = min(1, max(0.12, level * 0.45 + next() * 0.62))
+            let edge = min(CGFloat(index + 1), CGFloat(count - index)) / 3
+            return level * min(1, 0.55 + edge * 0.45)
+        }
     }
 }
 
