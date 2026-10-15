@@ -82,10 +82,10 @@ struct ChatView: View {
                     let metrics = IMessageLayoutMetrics(viewportWidth: viewport.size.width)
                     messageList(topInset: usesIMessageLayout
                         ? viewport.safeAreaInsets.top + metrics.headerHeight
-                        : (isNest ? nestTopInset : 76))
+                        : (isNest ? nestTopInset : 88))
                         .zIndex(0)
                     topFog(safeAreaTop: viewport.safeAreaInsets.top,
-                           headerHeight: usesIMessageLayout ? metrics.headerHeight : 55)
+                           headerHeight: usesIMessageLayout ? metrics.headerHeight : 61)
                         .zIndex(1)
                     if usesIMessageLayout {
                         IMessageChatHeader(
@@ -285,19 +285,11 @@ struct ChatView: View {
     @ViewBuilder
     private var topBarContent: some View {
         HStack(spacing: 10) {
-            if isNest {
-                Button { showingSettings = true } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(palette.text)
-                        .frame(width: 38, height: 38)
-                        .background { headerGlass(shape: Circle()) }
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-
-            } else {
-                headerButton(icon: "slider.horizontal.3", size: 17) { showingSettings = true }
+            headerButton(label: "设置") { showingSettings = true } icon: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .semibold))
+                    // The chevron's optical center sits left of its box.
+                    .offset(x: -1)
             }
 
             Spacer(minLength: 6)
@@ -310,32 +302,47 @@ struct ChatView: View {
 
             if isNest {
                 HStack(spacing: 0) {
-                    nestHeaderButton(icon: "terminal", size: 15) { showingTerminal = true }
+                    nestHeaderButton(label: "终端") { showingTerminal = true } icon: {
+                        Image(systemName: "terminal").font(.system(size: 16, weight: .medium))
+                    }
                     Rectangle()
                         .fill(palette.hairline)
-                        .frame(width: 0.6, height: 18)
-                    nestHeaderButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
+                        .frame(width: 0.6, height: 20)
+                    nestHeaderButton(label: "空间") { showingSpaces = true } icon: { heartGlyph }
                 }
                 .padding(.horizontal, 3)
-                .background { headerGlass(shape: Capsule()) }
+                .modifier(HeaderGlass(shape: Capsule(), isDark: model.theme == .harbor))
             } else {
-                HStack(spacing: 14) {
-                    headerButton(icon: "terminal", size: 15) { showingTerminal = true }
-                    headerButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
+                HStack(spacing: 12) {
+                    headerButton(label: "终端") { showingTerminal = true } icon: {
+                        Image(systemName: "terminal").font(.system(size: 16, weight: .medium))
+                    }
+                    headerButton(label: "空间") { showingSpaces = true } icon: { heartGlyph }
                 }
             }
         }
     }
 
-    private func nestHeaderButton(icon: String, size: CGFloat, action: @escaping () -> Void) -> some View {
+    private var heartGlyph: some View {
+        DrawnHeart()
+            .stroke(palette.text, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+            .frame(width: 19, height: 17)
+            .offset(y: 0.5)
+    }
+
+    private func nestHeaderButton<Icon: View>(
+        label: String,
+        action: @escaping () -> Void,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: size, weight: .medium))
+            icon()
                 .foregroundStyle(palette.text)
-                .frame(width: 37, height: 38)
+                .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     /// The list deliberately ignores the container's top safe area so chat can
@@ -348,7 +355,7 @@ struct ChatView: View {
             .first(where: { $0.activationState == .foregroundActive })?
             .keyWindow?
             .safeAreaInsets.top ?? 59
-        return device + 55
+        return device + 61
     }
 
     private func topFog(safeAreaTop: CGFloat, headerHeight: CGFloat) -> some View {
@@ -378,53 +385,23 @@ struct ChatView: View {
         .allowsHitTesting(false)
     }
 
-    @ViewBuilder
-    private func headerGlass<S: InsettableShape>(shape: S) -> some View {
-        ZStack {
-            VariableBackdropBlur(radius: 18, mask: .solid)
-            shape.fill(headerGlassTint)
-        }
-        .clipShape(shape)
-        .overlay(shape.stroke(headerGlassRing, lineWidth: 0.65))
-        .shadow(color: headerShadowColor, radius: model.theme == .paper ? 10 : 11, y: 3.5)
-    }
+    /// 44pt like the system's own glass toolbar buttons; at 32 they were easy to miss.
+    static let headerButtonSize: CGFloat = 44
 
-    private func headerButton(icon: String, size: CGFloat, action: @escaping () -> Void) -> some View {
+    private func headerButton<Icon: View>(
+        label: String,
+        action: @escaping () -> Void,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: size, weight: .medium))
+            icon()
                 .foregroundStyle(palette.text)
-                .frame(width: 32, height: 32)
-                .background { headerGlass(shape: Circle()) }
+                .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
-    }
-
-    private var headerGlassTint: Color {
-        switch model.theme {
-        case .mist: return Color(hex: 0xF7FAFC).opacity(0.52)
-        case .paper: return Color(hex: 0xF0EEE6).opacity(0.62)
-        case .harbor: return Color.black.opacity(0.32)
-        case .nest: return Color.white.opacity(0.52)
-        }
-    }
-
-    private var headerGlassRing: Color {
-        switch model.theme {
-        case .mist: return Color.white.opacity(0.48)
-        case .paper: return Color.white.opacity(0.48)
-        case .harbor: return Color.white.opacity(0.12)
-        case .nest: return Color.white.opacity(0.78)
-        }
-    }
-
-    private var headerShadowColor: Color {
-        switch model.theme {
-        case .mist: return Color.black.opacity(0.10)
-        case .paper: return Color(hex: 0x8C7466).opacity(0.16)
-        case .harbor: return Color.black.opacity(0.18)
-        case .nest: return Color.black.opacity(0.075)
-        }
+        .modifier(HeaderGlass(shape: Circle(), isDark: model.theme == .harbor))
+        .accessibilityLabel(label)
     }
 
     private var topFogTint: Color {
@@ -2828,5 +2805,38 @@ private struct ComposerView: View {
     private func formatVoiceTime(_ value: TimeInterval) -> String {
         let total = max(0, Int(value))
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
+
+/// System Liquid Glass for the header buttons, like the Telegram composer's controls.
+/// The old hand-rolled blur, tint and ring read flat next to the real glass below.
+/// A translucent base keeps the glyph's fixed theme ink readable over dark wallpaper.
+private struct HeaderGlass<S: Shape>: ViewModifier {
+    let shape: S
+    let isDark: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .background(isDark ? Color.black.opacity(0.28) : Color.white.opacity(0.42), in: shape)
+            .glassEffect(.regular.interactive(), in: shape)
+    }
+}
+
+/// A heart drawn in one stroke, like a pen going round it: plump lobes, a soft
+/// point, and the line running a little past where it began at the top dip.
+private struct DrawnHeart: Shape {
+    func path(in rect: CGRect) -> Path {
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x * rect.width, y: rect.minY + y * rect.height)
+        }
+        var path = Path()
+        path.move(to: p(0.50, 0.27))
+        path.addCurve(to: p(0.04, 0.33), control1: p(0.40, 0.04), control2: p(0.06, 0.00))
+        path.addCurve(to: p(0.50, 0.96), control1: p(0.02, 0.60), control2: p(0.30, 0.76))
+        path.addCurve(to: p(0.96, 0.33), control1: p(0.70, 0.76), control2: p(0.98, 0.60))
+        path.addCurve(to: p(0.50, 0.27), control1: p(0.94, 0.00), control2: p(0.60, 0.04))
+        // The tail: the pen doesn't lift exactly where it started.
+        path.addQuadCurve(to: p(0.42, 0.42), control: p(0.45, 0.33))
+        return path
     }
 }
