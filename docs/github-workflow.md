@@ -59,6 +59,11 @@ requested, dispatch it for the pushed task branch and check its result:
 gh workflow run ios-build.yml -R hazelnutsK/Tidal_Echo-workspace --ref cc/your-task
 ```
 
+By default this builds only the IPA. Add `-f previews=true` to also capture the
+simulator previews and run the native UI review (much slower); do this when a
+change touches a screen those previews cover, or regional fonts, whose glyph
+check compares the preview screenshots.
+
 ## Applying a change to Windows
 
 Fetch the VPS branch in the separate local development checkout. Review the diff
