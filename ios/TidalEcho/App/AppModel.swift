@@ -1040,6 +1040,7 @@ final class AppModel: ObservableObject {
             meta: optimisticMeta,
             delivery: .sending
         )
+        markLiveArrival(tempID)
         messages.append(optimistic)
         if !deferReply {
             // Show feedback immediately. The relay also broadcasts a typing event,
@@ -1060,6 +1061,8 @@ final class AppModel: ObservableObject {
                 messages[realIndex].delivery = .sent
                 messages.removeAll { $0.id == tempID }
             } else if let tempIndex = messages.firstIndex(where: { $0.id == tempID }) {
+                // The row is rebuilt under its real id; let it finish the same entrance.
+                liveArrivals[response.id] = liveArrivals[tempID]
                 messages[tempIndex].id = response.id
                 messages[tempIndex].delivery = .sent
                 historyArchive.append(messages[tempIndex])
@@ -1270,7 +1273,7 @@ final class AppModel: ObservableObject {
             if let echoedVoice {
                 // The persisted row contains the full acoustic/emotion line;
                 // the upload response intentionally carries only the transcript.
-                upsert(echoedVoice)
+                upsert(echoedVoice, marksLiveArrival: true)
             } else if !messages.contains(where: { $0.id == response.id }) {
                 let transcript = Self.voiceTextWithoutMicrophone(response.text ?? "")
                 upsert(ChatMessage(
@@ -1284,7 +1287,7 @@ final class AppModel: ObservableObject {
                         apiSession: activeWireSessionID
                     ),
                     delivery: .sent
-                ))
+                ), marksLiveArrival: true)
             }
             await catchUp(using: client)
             return true
@@ -2441,7 +2444,13 @@ final class AppModel: ObservableObject {
 
         guard let message = try? decoder.decode(ChatMessage.self, from: data),
               !message.meta.hidden else { return }
-        upsert(message)
+        // A finished stream turns into its message in place, and her own message
+        // echoing back while the send is in flight already has its optimistic row.
+        let replacesStream = message.author == .ai
+            && !(message.kind == "thinking" ? streamingThinking : streamingReply).isEmpty
+        let echoesPendingSend = message.author == .human
+            && messages.contains { $0.id < 0 && $0.delivery == .sending }
+        upsert(message, marksLiveArrival: !replacesStream && !echoesPendingSend)
         if message.author == .ai && messageBelongsToActiveSession(message) {
             finishTypingAfterAIActivity()
             if message.kind == "thinking" {
@@ -2525,7 +2534,27 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func upsert(_ incomingMessage: ChatMessage, allowsNativeArrival: Bool = true) {
+    /// When messages arrived live (not from history), so each row can play its entrance
+    /// once. Not published: it is set just before the append that first builds the row.
+    private var liveArrivals: [Int: Date] = [:]
+
+    /// The arrival time while the row's entrance may still be running.
+    func liveArrival(for id: Int) -> Date? {
+        guard let date = liveArrivals[id], Date().timeIntervalSince(date) < 1 else { return nil }
+        return date
+    }
+
+    private func markLiveArrival(_ id: Int) {
+        let now = Date()
+        liveArrivals = liveArrivals.filter { now.timeIntervalSince($0.value) < 2 }
+        liveArrivals[id] = now
+    }
+
+    private func upsert(
+        _ incomingMessage: ChatMessage,
+        allowsNativeArrival: Bool = true,
+        marksLiveArrival: Bool = false
+    ) {
         let message = normalizingMissedCallState(incomingMessage)
         if message.author == .ai && message.kind == "call" {
             incomingCallSessions[message.id] = normalizedSessionID(message.meta.apiSession)
@@ -2551,6 +2580,7 @@ final class AppModel: ObservableObject {
         if let index = messages.firstIndex(where: { $0.id == message.id }) {
             messages[index] = message
         } else {
+            if marksLiveArrival { markLiveArrival(message.id) }
             messages.append(message)
             messages.sort(by: Self.messageComesBefore)
         }

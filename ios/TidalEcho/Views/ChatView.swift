@@ -586,6 +586,10 @@ struct ChatView: View {
                                     .onTapGesture { toggleSelection(message.id) }
                             }
                         }
+                        .modifier(BubbleEntrance(
+                            arrivedAt: model.liveArrival(for: message.id),
+                            fromHuman: message.author == .human
+                        ))
                         .id(message.id)
                     }
 
@@ -632,6 +636,8 @@ struct ChatView: View {
                             showsAvatarHeader: model.streamingThinking.isEmpty
                                 && !historyEndsWithAIThinkingHeader
                         )
+                        // Built once per stream, so "now" is when the first words came in.
+                        .modifier(BubbleEntrance(arrivedAt: Date(), fromHuman: false))
                     } else if model.isTyping || !model.streamingThinking.isEmpty {
                         TypingRow(
                             palette: palette,
@@ -642,6 +648,7 @@ struct ChatView: View {
                             showsAvatarHeader: model.streamingThinking.isEmpty
                                 && !historyEndsWithAIThinkingHeader
                         )
+                        .modifier(BubbleEntrance(arrivedAt: Date(), fromHuman: false))
                     }
                     }
 
@@ -2838,5 +2845,72 @@ private struct DrawnHeart: Shape {
         // The tail: the pen doesn't lift exactly where it started.
         path.addQuadCurve(to: p(0.42, 0.42), control: p(0.45, 0.33))
         return path
+    }
+}
+
+/// A message that arrives while she is looking rises into place instead of
+/// appearing all at once: hers springs up from the composer with a little
+/// overshoot, mine floats up and fades in more quietly.
+///
+/// The entrance runs on wall-clock time from the arrival, so a row rebuilt
+/// mid-way (her message swapping its temporary id for the real one) picks up
+/// where the old one was instead of starting over or snapping into place.
+private struct BubbleEntrance: ViewModifier {
+    let fromHuman: Bool
+    @State private var progress: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(arrivedAt: Date?, fromHuman: Bool) {
+        self.fromHuman = fromHuman
+        let duration = Self.duration(fromHuman: fromHuman)
+        let elapsed = arrivedAt.map { Date().timeIntervalSince($0) } ?? duration
+        _progress = State(initialValue: min(1, max(0, elapsed / duration)))
+    }
+
+    static func duration(fromHuman: Bool) -> Double { fromHuman ? 0.42 : 0.5 }
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(BubbleEntranceEffect(progress: reduceMotion ? 1 : progress, fromHuman: fromHuman))
+            .onAppear {
+                guard progress < 1, !reduceMotion else { return }
+                // Linear in time; the effect applies the curve, so a resumed
+                // entrance stays on the same path.
+                withAnimation(.linear(duration: (1 - progress) * Self.duration(fromHuman: fromHuman))) {
+                    progress = 1
+                }
+            }
+    }
+}
+
+private struct BubbleEntranceEffect: ViewModifier, Animatable {
+    var progress: Double
+    let fromHuman: Bool
+
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let eased = fromHuman ? Self.easeOutBack(progress) : Self.easeOutCubic(progress)
+        let rest = 1 - eased
+        content
+            .scaleEffect(
+                1 - rest * (fromHuman ? 0.14 : 0.05),
+                anchor: fromHuman ? .bottomTrailing : .bottomLeading
+            )
+            .offset(y: rest * (fromHuman ? 30 : 14))
+            .opacity(min(1, progress * (fromHuman ? 3 : 2)))
+    }
+
+    private static func easeOutCubic(_ t: Double) -> Double {
+        1 - pow(1 - t, 3)
+    }
+
+    /// Overshoots by a few percent before settling: the "pop" of a sent bubble.
+    private static func easeOutBack(_ t: Double) -> Double {
+        let c1 = 1.25, c3 = c1 + 1
+        return 1 + c3 * pow(t - 1, 3) + c1 * pow(t - 1, 2)
     }
 }
