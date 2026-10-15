@@ -300,26 +300,15 @@ struct ChatView: View {
                     .tint(palette.accent)
             }
 
-            if isNest {
-                HStack(spacing: 0) {
-                    nestHeaderButton(label: "终端") { showingTerminal = true } icon: {
-                        Image(systemName: "terminal").font(.system(size: 16, weight: .medium))
-                    }
-                    Rectangle()
-                        .fill(palette.hairline)
-                        .frame(width: 0.6, height: 20)
-                    nestHeaderButton(label: "空间") { showingSpaces = true } icon: { heartGlyph }
+            // One long pill for both, like a grouped toolbar item.
+            HStack(spacing: 0) {
+                pillHeaderButton(label: "终端") { showingTerminal = true } icon: {
+                    Image(systemName: "terminal").font(.system(size: 16, weight: .medium))
                 }
-                .padding(.horizontal, 3)
-                .modifier(HeaderGlass(shape: Capsule(), isDark: model.theme == .harbor))
-            } else {
-                HStack(spacing: 12) {
-                    headerButton(label: "终端") { showingTerminal = true } icon: {
-                        Image(systemName: "terminal").font(.system(size: 16, weight: .medium))
-                    }
-                    headerButton(label: "空间") { showingSpaces = true } icon: { heartGlyph }
-                }
+                pillHeaderButton(label: "空间") { showingSpaces = true } icon: { heartGlyph }
             }
+            .padding(.horizontal, 4)
+            .modifier(HeaderGlass(shape: Capsule(), isDark: model.theme == .harbor))
         }
     }
 
@@ -327,10 +316,9 @@ struct ChatView: View {
         DrawnHeart()
             .stroke(palette.text, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
             .frame(width: 19, height: 17)
-            .offset(y: 0.5)
     }
 
-    private func nestHeaderButton<Icon: View>(
+    private func pillHeaderButton<Icon: View>(
         label: String,
         action: @escaping () -> Void,
         @ViewBuilder icon: () -> Icon
@@ -2829,21 +2817,22 @@ private struct HeaderGlass<S: Shape>: ViewModifier {
     }
 }
 
-/// A heart drawn in one stroke, like a pen going round it: plump lobes, a soft
-/// point, and the line running a little past where it began at the top dip.
+/// A plump outlined heart: round lobes, a soft dip, and a rounded bottom
+/// instead of a sharp point.
 private struct DrawnHeart: Shape {
     func path(in rect: CGRect) -> Path {
         func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
             CGPoint(x: rect.minX + x * rect.width, y: rect.minY + y * rect.height)
         }
         var path = Path()
-        path.move(to: p(0.50, 0.27))
-        path.addCurve(to: p(0.04, 0.33), control1: p(0.40, 0.04), control2: p(0.06, 0.00))
-        path.addCurve(to: p(0.50, 0.96), control1: p(0.02, 0.60), control2: p(0.30, 0.76))
-        path.addCurve(to: p(0.96, 0.33), control1: p(0.70, 0.76), control2: p(0.98, 0.60))
-        path.addCurve(to: p(0.50, 0.27), control1: p(0.94, 0.00), control2: p(0.60, 0.04))
-        // The tail: the pen doesn't lift exactly where it started.
-        path.addQuadCurve(to: p(0.42, 0.42), control: p(0.45, 0.33))
+        path.move(to: p(0.50, 0.25))
+        path.addCurve(to: p(0.04, 0.35), control1: p(0.38, 0.03), control2: p(0.04, 0.03))
+        path.addCurve(to: p(0.40, 0.86), control1: p(0.04, 0.57), control2: p(0.24, 0.70))
+        // The bottom turns round rather than meeting in a point.
+        path.addQuadCurve(to: p(0.60, 0.86), control: p(0.50, 0.96))
+        path.addCurve(to: p(0.96, 0.35), control1: p(0.76, 0.70), control2: p(0.96, 0.57))
+        path.addCurve(to: p(0.50, 0.25), control1: p(0.96, 0.03), control2: p(0.62, 0.03))
+        path.closeSubpath()
         return path
     }
 }
