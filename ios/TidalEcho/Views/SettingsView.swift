@@ -2109,7 +2109,7 @@ private struct ContextSettingsView: View {
                         Text("\(Int(triggerK))k")
                             .foregroundStyle(palette.secondaryText)
                     }
-                    Slider(value: $triggerK, in: 80...500, step: 20)
+                    Slider(value: $triggerK, in: 80...1000, step: 20)
                         .tint(palette.accent)
                     Button("保存阈值") { Task { await saveThreshold() } }
                 }
