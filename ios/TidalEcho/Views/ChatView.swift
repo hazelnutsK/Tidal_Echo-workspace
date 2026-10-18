@@ -37,15 +37,16 @@ struct ChatView: View {
     @State private var newMessageCount = 0
     @State private var observedMessageCount = 0
     @State private var chatScrollView: UIScrollView?
+    /// Frosted bubbles show slices of this one pre-blurred wallpaper.
+    @State private var frostedBackdrop: FrostedBackdrop?
+    @State private var chatBackgroundFrame: CGRect = .zero
+    @Environment(\.colorScheme) private var colorScheme
 
     private var palette: EchoPalette { model.theme.palette }
     private var isNest: Bool { model.theme == .nest }
     private var usesIMessageLayout: Bool { model.chatLayoutStyle == .imessage }
     private var usesUpperTailAvatarLayout: Bool {
-        guard model.showsAIAvatar,
-              model.showsHumanAvatar,
-              model.bubbleShapeStyle == .upperTail else { return false }
-        return model.bubbleStyle == .classic || model.bubbleStyle == .frosted
+        model.showsAIAvatar && model.showsHumanAvatar && model.bubbleShapeStyle == .upperTail
     }
     private var historyEndsWithAIThinkingHeader: Bool {
         for row in chatRows.reversed() {
@@ -59,9 +60,40 @@ struct ChatView: View {
         return false
     }
 
+    private var frostedBackdropInput: FrostedBackdropRenderer.Input? {
+        guard model.bubbleStyle == .frosted else { return nil }
+        return FrostedBackdropRenderer.input(
+            wallpaper: model.visibleBackgroundImage,
+            frame: chatBackgroundFrame,
+            background: palette.background,
+            colorScheme: colorScheme,
+            wallpaperOpacity: model.backgroundOpacity,
+            wallpaperBlur: model.backgroundBlur
+        )
+    }
+
+    private func renderFrostedBackdrop(_ input: FrostedBackdropRenderer.Input?) async {
+        guard let input else {
+            frostedBackdrop = nil
+            return
+        }
+        // Slider drags change the input on every tick; let them settle first.
+        try? await Task.sleep(nanoseconds: 120_000_000)
+        guard !Task.isCancelled else { return }
+        let wallpaper = model.visibleBackgroundImage
+        let rendered = await Task.detached(priority: .userInitiated) {
+            FrostedBackdropRenderer.render(wallpaper: wallpaper, input: input)
+        }.value
+        guard !Task.isCancelled else { return }
+        frostedBackdrop = rendered
+    }
+
     var body: some View {
         ZStack {
             palette.background.ignoresSafeArea()
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    chatBackgroundFrame = $0
+                }
             if let background = model.visibleBackgroundImage {
                 GeometryReader { geometry in
                     Image(uiImage: background)
@@ -83,6 +115,7 @@ struct ChatView: View {
                     messageList(topInset: usesIMessageLayout
                         ? viewport.safeAreaInsets.top + metrics.headerHeight
                         : (isNest ? nestTopInset : 88))
+                        .environment(\.frostedBackdrop, model.bubbleStyle == .frosted ? frostedBackdrop : nil)
                         .zIndex(0)
                     topFog(safeAreaTop: viewport.safeAreaInsets.top,
                            headerHeight: usesIMessageLayout ? metrics.headerHeight : 61)
@@ -162,6 +195,9 @@ struct ChatView: View {
         .environment(\.processTitleFont, model.processTitleFont)
         .environment(\.showsProcessDisclosure, model.showsProcessDisclosure)
         .environment(\.bubblePaddingOffset, model.bubblePaddingOffset)
+        .task(id: frostedBackdropInput) {
+            await renderFrostedBackdrop(frostedBackdropInput)
+        }
         .sheet(isPresented: $showingSettings) {
             SettingsView(
                 model: model,

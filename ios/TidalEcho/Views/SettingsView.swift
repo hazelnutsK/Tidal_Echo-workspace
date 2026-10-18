@@ -973,63 +973,23 @@ private struct AppearanceSettingsView: View {
             }
             .pickerStyle(.segmented)
 
-            if model.bubbleStyle != .liquid {
-                Picker("气泡形状", selection: $model.bubbleShapeStyle) {
-                    ForEach(EchoBubbleShapeStyle.allCases) { style in
-                        Text(style.title).tag(style)
-                    }
+            Picker("气泡形状", selection: $model.bubbleShapeStyle) {
+                ForEach(EchoBubbleShapeStyle.allCases) { style in
+                    Text(style.title).tag(style)
                 }
-                .pickerStyle(.segmented)
             }
+            .pickerStyle(.segmented)
 
-            if model.bubbleStyle != .liquid, let spec = model.bubbleShapeStyle.smoothSpec {
+            if let spec = model.bubbleShapeStyle.smoothSpec {
                 VStack(spacing: 12) {
                     smoothPreviewBubble("角给你看清楚", spec: spec, isHuman: false)
                     smoothPreviewBubble("就这个", spec: spec, isHuman: true)
                 }
                 .padding(.vertical, 7)
-            }
-
-            if model.bubbleStyle == .liquid {
+            } else if model.bubbleStyle != .classic {
                 VStack(spacing: 12) {
-                    HStack {
-                        Text("好，就在这里慢慢调")
-                            .font(model.chatFont.font(
-                                size: PWAChatMetrics.bubbleFontSize(for: model.chatFont) * model.fontScale,
-                                numericWeight: model.chatWeight
-                            ))
-                            .padding(.horizontal, previewPadding.horizontal)
-                            .padding(.vertical, previewPadding.vertical)
-                            .foregroundStyle(model.resolvedAIBubbleTextColor(default: palette.text))
-                            .background {
-                                LiquidGlassBubbleBackground(
-                                    tint: model.resolvedAIBubbleColor(default: palette.aiBubble),
-                                    tintOpacity: model.aiBubbleOpacity,
-                                    radius: CGFloat(model.bubbleRadius),
-                                    settings: model.liquidGlassSettings
-                                )
-                            }
-                        Spacer(minLength: 24)
-                    }
-                    HStack {
-                        Spacer(minLength: 24)
-                        Text("气泡再透一点")
-                            .font(model.chatFont.font(
-                                size: PWAChatMetrics.bubbleFontSize(for: model.chatFont) * model.fontScale,
-                                numericWeight: model.chatWeight
-                            ))
-                            .padding(.horizontal, previewPadding.horizontal)
-                            .padding(.vertical, previewPadding.vertical)
-                            .foregroundStyle(model.resolvedHumanBubbleTextColor(default: palette.text))
-                            .background {
-                                LiquidGlassBubbleBackground(
-                                    tint: model.resolvedHumanBubbleColor(default: palette.humanBubble),
-                                    tintOpacity: model.humanBubbleOpacity,
-                                    radius: CGFloat(model.bubbleRadius),
-                                    settings: model.liquidGlassSettings
-                                )
-                            }
-                    }
+                    previewBubble("好，就在这里慢慢调", isHuman: false, shape: roundedPreviewShape)
+                    previewBubble("气泡再透一点", isHuman: true, shape: roundedPreviewShape)
                 }
                 .padding(.vertical, 7)
             }
@@ -1096,10 +1056,13 @@ private struct AppearanceSettingsView: View {
                 valueText: "\(Int((model.humanBubbleOpacity * 100).rounded()))%",
                 value: $model.humanBubbleOpacity,
                 range: 0...1,
-                step: 0.05
+                step: 0.05,
+                note: model.bubbleStyle == .frosted
+                    ? "磨砂下是气泡颜色染在玻璃上的浓度；玻璃本身偏亮还是偏暗，跟着字体颜色自动走。"
+                    : nil
             )
             // 软糖/利落 carry their own fixed radius, so the slider would do nothing there.
-            if model.bubbleStyle == .liquid || model.bubbleShapeStyle.smoothSpec == nil {
+            if model.bubbleShapeStyle.smoothSpec == nil {
                 settingSlider(
                     title: "气泡圆角",
                     valueText: "\(Int(model.bubbleRadius.rounded()))",
@@ -1242,9 +1205,28 @@ private struct AppearanceSettingsView: View {
         }
     }
 
-    @ViewBuilder
     private func smoothPreviewBubble(_ text: String, spec: SmoothBubbleSpec, isHuman: Bool) -> some View {
-        let shape = SmoothCornerBubbleShape(radius: spec.radius, smoothing: spec.smoothing)
+        previewBubble(
+            text,
+            isHuman: isHuman,
+            shape: AnyShape(SmoothCornerBubbleShape(radius: spec.radius, smoothing: spec.smoothing))
+        )
+    }
+
+    private var roundedPreviewShape: AnyShape {
+        AnyShape(RoundedRectangle(cornerRadius: CGFloat(model.bubbleRadius), style: .continuous))
+    }
+
+    /// 设置里的样例气泡：形状由调用方给，材质跟着当前的气泡样式走。
+    @ViewBuilder
+    private func previewBubble(_ text: String, isHuman: Bool, shape: AnyShape) -> some View {
+        let fill = isHuman
+            ? model.resolvedHumanBubbleColor(default: palette.humanBubble)
+            : model.resolvedAIBubbleColor(default: palette.aiBubble)
+        let textColor = isHuman
+            ? model.resolvedHumanBubbleTextColor(default: palette.text)
+            : model.resolvedAIBubbleTextColor(default: palette.text)
+        let opacity = isHuman ? model.humanBubbleOpacity : model.aiBubbleOpacity
         HStack {
             if isHuman { Spacer(minLength: 24) }
             Text(text)
@@ -1252,20 +1234,28 @@ private struct AppearanceSettingsView: View {
                     size: PWAChatMetrics.bubbleFontSize(for: model.chatFont) * model.fontScale,
                     numericWeight: model.chatWeight
                 ))
-                .foregroundStyle(isHuman
-                    ? model.resolvedHumanBubbleTextColor(default: palette.text)
-                    : model.resolvedAIBubbleTextColor(default: palette.text))
+                .foregroundStyle(textColor)
                 .padding(.horizontal, previewPadding.horizontal)
                 .padding(.vertical, previewPadding.vertical)
                 .background {
-                    shape.fill((isHuman
-                        ? model.resolvedHumanBubbleColor(default: palette.humanBubble)
-                        : model.resolvedAIBubbleColor(default: palette.aiBubble)).opacity(
-                            isHuman ? model.humanBubbleOpacity : model.aiBubbleOpacity
-                        ))
+                    switch model.bubbleStyle {
+                    case .liquid:
+                        LiquidGlassBubbleBackground(
+                            shape: shape, tint: fill, tintOpacity: opacity,
+                            settings: model.liquidGlassSettings
+                        )
+                    case .frosted:
+                        FrostedGlassBubbleBackground(
+                            shape: shape, tint: fill, tintOpacity: opacity, textColor: textColor
+                        )
+                    case .classic:
+                        shape.fill(fill.opacity(opacity))
+                    }
                 }
                 .overlay {
-                    shape.stroke(palette.hairline, lineWidth: CGFloat(model.bubbleBorderWidth))
+                    if model.bubbleBorderWidth > 0 {
+                        shape.stroke(palette.hairline, lineWidth: CGFloat(model.bubbleBorderWidth))
+                    }
                 }
             if !isHuman { Spacer(minLength: 24) }
         }
@@ -1283,47 +1273,13 @@ private struct AppearanceSettingsView: View {
         return points == 0 ? "默认" : (points > 0 ? "+\(points)" : "\(points)")
     }
 
-    /// 只为看边距：形状跟着当前的平滑角/圆角走，液态玻璃用同一个玻璃底。
-    @ViewBuilder
+    /// 只为看边距：形状跟着当前的平滑角/圆角走，材质跟着当前样式。
     private func paddingPreviewBubble(_ text: String, isHuman: Bool) -> some View {
-        let fill = (isHuman
-            ? model.resolvedHumanBubbleColor(default: palette.humanBubble)
-            : model.resolvedAIBubbleColor(default: palette.aiBubble))
-        let opacity = isHuman ? model.humanBubbleOpacity : model.aiBubbleOpacity
-        let spec = model.bubbleStyle == .liquid ? nil : model.bubbleShapeStyle.smoothSpec
-        let shape: AnyShape = spec.map { AnyShape(SmoothCornerBubbleShape(radius: $0.radius, smoothing: $0.smoothing)) }
-            ?? AnyShape(RoundedRectangle(cornerRadius: CGFloat(model.bubbleRadius), style: .continuous))
-        HStack {
-            if isHuman { Spacer(minLength: 24) }
-            Text(text)
-                .font(model.chatFont.font(
-                    size: PWAChatMetrics.bubbleFontSize(for: model.chatFont) * model.fontScale,
-                    numericWeight: model.chatWeight
-                ))
-                .foregroundStyle(isHuman
-                    ? model.resolvedHumanBubbleTextColor(default: palette.text)
-                    : model.resolvedAIBubbleTextColor(default: palette.text))
-                .padding(.horizontal, previewPadding.horizontal)
-                .padding(.vertical, previewPadding.vertical)
-                .background {
-                    if model.bubbleStyle == .liquid {
-                        LiquidGlassBubbleBackground(
-                            tint: fill, tintOpacity: opacity,
-                            radius: CGFloat(model.bubbleRadius),
-                            settings: model.liquidGlassSettings
-                        )
-                    } else {
-                        shape.fill(fill.opacity(opacity))
-                    }
-                }
-                .overlay {
-                    if model.bubbleStyle != .liquid && model.bubbleBorderWidth > 0 {
-                        shape.stroke(palette.hairline, lineWidth: CGFloat(model.bubbleBorderWidth))
-                    }
-                }
-                .animation(.easeOut(duration: 0.15), value: model.bubblePaddingOffset)
-            if !isHuman { Spacer(minLength: 24) }
-        }
+        let shape = model.bubbleShapeStyle.smoothSpec.map {
+            AnyShape(SmoothCornerBubbleShape(radius: $0.radius, smoothing: $0.smoothing))
+        } ?? roundedPreviewShape
+        return previewBubble(text, isHuman: isHuman, shape: shape)
+            .animation(.easeOut(duration: 0.15), value: model.bubblePaddingOffset)
     }
 
     private static func importedWeightNote(_ support: EchoChatFont.ImportedWeightSupport) -> String {

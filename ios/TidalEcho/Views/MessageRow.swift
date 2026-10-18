@@ -341,13 +341,8 @@ struct MessageRow: View {
                     .background { bubbleBackground }
                     .overlay {
                         if bubbleBorderWidth > 0 && (message.author == .human || showsAIBubble) {
-                            if bubbleStyle == .liquid {
-                                RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
-                                    .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
-                            } else {
-                                bubbleShape
-                                    .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
-                            }
+                            bubbleShape
+                                .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
                         }
                     }
                     // Constrain wrapping without painting the background across the
@@ -517,29 +512,28 @@ struct MessageRow: View {
     private var bubbleBackground: some View {
         if message.author == .human || showsAIBubble {
             let color = message.author == .human ? humanBubbleColor : aiBubbleColor
+            let shape = bubbleShape
             if bubbleStyle == .liquid {
                 LiquidGlassBubbleBackground(
+                    shape: shape,
                     tint: color,
                     tintOpacity: bubbleOpacity,
-                    radius: CGFloat(bubbleRadius),
                     settings: liquidGlass
                 )
+            } else if bubbleStyle == .frosted {
+                FrostedGlassBubbleBackground(
+                    shape: shape,
+                    tint: color,
+                    tintOpacity: bubbleOpacity,
+                    textColor: resolvedBubbleTextColor
+                )
+            } else if isNest {
+                // ChatNest's bubble is a flat tinted plate: no lift, no rim.
+                shape.fill(color.opacity(bubbleOpacity))
             } else {
-                let shape = bubbleShape
-                if bubbleStyle == .frosted {
-                    FrostedGlassBubbleBackground(
-                        shape: shape,
-                        tint: color,
-                        tintOpacity: bubbleOpacity
-                    )
-                } else if isNest {
-                    // ChatNest's bubble is a flat tinted plate: no lift, no rim.
-                    shape.fill(color.opacity(bubbleOpacity))
-                } else {
-                    shape
-                        .fill(color.opacity(bubbleOpacity))
-                        .shadow(color: Color.black.opacity(0.045 * bubbleOpacity), radius: 4.5, y: 2)
-                }
+                shape
+                    .fill(color.opacity(bubbleOpacity))
+                    .shadow(color: Color.black.opacity(0.045 * bubbleOpacity), radius: 4.5, y: 2)
             }
         }
     }
@@ -570,10 +564,7 @@ struct MessageRow: View {
         return 280 * min(scale, 1.2)
     }
 
-    private var usesUpperCornerShape: Bool {
-        bubbleShapeStyle == .upperTail
-            && (bubbleStyle == .classic || bubbleStyle == .frosted)
-    }
+    private var usesUpperCornerShape: Bool { bubbleShapeStyle == .upperTail }
 
     private var usesUpperTailAvatarLayout: Bool {
         // Keep every other avatar/bubble combination unchanged. The detached
@@ -586,7 +577,6 @@ struct MessageRow: View {
     }
 
     private var compactGroupTopPadding: CGFloat {
-        guard bubbleStyle == .classic || bubbleStyle == .frosted else { return 0 }
         switch bubbleShapeStyle {
         case .telegram: return -6 // 9pt stack spacing becomes 3pt.
         case .upperTail: return -4 // 9pt stack spacing becomes 5pt.
@@ -595,7 +585,7 @@ struct MessageRow: View {
     }
 
     private var smoothSpec: SmoothBubbleSpec? {
-        bubbleStyle == .classic || bubbleStyle == .frosted ? bubbleShapeStyle.smoothSpec : nil
+        bubbleShapeStyle.smoothSpec
     }
 
     private var carriesBubble: Bool { message.author == .human || showsAIBubble }
@@ -1212,9 +1202,9 @@ enum ChatBubbleInsets {
         carriesBubble: Bool,
         offset: CGSize
     ) -> (horizontal: CGFloat, vertical: CGFloat) {
-        let shaped = bubbleStyle == .classic || bubbleStyle == .frosted
-        let smoothSpec = shaped ? shapeStyle.smoothSpec : nil
-        let telegram = shaped && shapeStyle == .telegram
+        // Every material, liquid glass included, now takes the chosen silhouette.
+        let smoothSpec = shapeStyle.smoothSpec
+        let telegram = shapeStyle == .telegram
         let inflation = bubbleStyle == .classic && shapeStyle == .standard
             ? PWAChatBubbleShape.inflationPadding(PWAChatBubbleShape.defaultInflation)
             : 0
@@ -1343,8 +1333,8 @@ struct PWAChatBubbleShape: Shape {
     }
 }
 
-/// Material and silhouette are separate settings: classic/frosted bubbles can
-/// opt into Telegram-like grouping while liquid glass keeps its rounded shape.
+/// Material and silhouette are separate settings: every material, liquid glass
+/// included, draws in whichever silhouette is chosen.
 private struct EchoMessageBubbleShape: Shape {
     let style: EchoBubbleShapeStyle
     let author: MessageAuthor
@@ -2519,38 +2509,32 @@ struct StreamingReplyRow: View {
                     .padding(.vertical, bubbleVerticalPadding)
                     .background {
                         if showsAIBubble {
+                            let shape = streamingBubbleShape
                             if bubbleStyle == .liquid {
                                 LiquidGlassBubbleBackground(
+                                    shape: shape,
                                     tint: aiBubbleColor,
                                     tintOpacity: bubbleOpacity,
-                                    radius: CGFloat(bubbleRadius),
                                     settings: liquidGlass
                                 )
+                            } else if bubbleStyle == .frosted {
+                                FrostedGlassBubbleBackground(
+                                    shape: shape,
+                                    tint: aiBubbleColor,
+                                    tintOpacity: bubbleOpacity,
+                                    textColor: aiBubbleTextColor
+                                )
                             } else {
-                                let shape = streamingBubbleShape
-                                if bubbleStyle == .frosted {
-                                    FrostedGlassBubbleBackground(
-                                        shape: shape,
-                                        tint: aiBubbleColor,
-                                        tintOpacity: bubbleOpacity
-                                    )
-                                } else {
-                                    shape
-                                        .fill(aiBubbleColor.opacity(bubbleOpacity))
-                                        .shadow(color: Color.black.opacity(0.045 * bubbleOpacity), radius: 4.5, y: 2)
-                                }
+                                shape
+                                    .fill(aiBubbleColor.opacity(bubbleOpacity))
+                                    .shadow(color: Color.black.opacity(0.045 * bubbleOpacity), radius: 4.5, y: 2)
                             }
                         }
                     }
                     .overlay {
                         if showsAIBubble && bubbleBorderWidth > 0 {
-                            if bubbleStyle == .liquid {
-                                RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
-                                    .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
-                            } else {
-                                streamingBubbleShape
-                                    .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
-                            }
+                            streamingBubbleShape
+                                .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
                         }
                     }
                     .frame(
@@ -2579,12 +2563,10 @@ struct StreamingReplyRow: View {
         )
     }
 
-    private var usesUpperCornerShape: Bool {
-        bubbleShapeStyle == .upperTail && (bubbleStyle == .classic || bubbleStyle == .frosted)
-    }
+    private var usesUpperCornerShape: Bool { bubbleShapeStyle == .upperTail }
 
     private var smoothSpec: SmoothBubbleSpec? {
-        bubbleStyle == .classic || bubbleStyle == .frosted ? bubbleShapeStyle.smoothSpec : nil
+        bubbleShapeStyle.smoothSpec
     }
 
     private var bubblePadding: (horizontal: CGFloat, vertical: CGFloat) {
@@ -2598,109 +2580,6 @@ struct StreamingReplyRow: View {
 
     private var effectiveBubbleInflation: CGFloat {
         bubbleStyle == .classic && bubbleShapeStyle == .standard ? PWAChatBubbleShape.defaultInflation : 0
-    }
-}
-
-/// Rebuilt to match Operit's chat bubbles (`ui/theme/LiquidGlass.kt`), whose
-/// surface is a bare backdrop — `vibrancy()` then `blur(28.dp)`, no refraction,
-/// since the bubbles pass `enableLens = false` — under a light tint wash and a
-/// thin, bright, slightly softened rim.
-///
-/// `.thinMaterial` cannot reach that look: a system material paints its own
-/// gray/white veil over the sample, which is what makes an iOS "frosted" panel
-/// read as milky plastic instead of glass. Sampling the backdrop directly and
-/// applying every layer above it explicitly is the whole difference.
-/// Keeping the caller's Shape preserves Telegram tails.
-private struct FrostedGlassBubbleBackground<BubbleShape: Shape>: View {
-    let shape: BubbleShape
-    let tint: Color
-    let tintOpacity: Double
-
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    var body: some View {
-        let isLight = colorScheme == .light
-        let clampedTint = max(0, min(1, tintOpacity))
-        // Operit tints the surface at 0.16 (light) / 0.23 (dark) plus a 0.10
-        // overlay boost. Past that the wash starts hiding the backdrop and the
-        // glass turns back into translucent plastic.
-        let surfaceTintOpacity = min(
-            isLight ? 0.26 : 0.33,
-            (isLight ? 0.07 : 0.11) + clampedTint * (isLight ? 0.19 : 0.22)
-        )
-
-        Group {
-            if reduceTransparency {
-                shape.fill(tint.opacity(isLight ? 0.30 : 0.38))
-            } else {
-                // A Shape fill happily paints outside the view's bounds, but a
-                // UIKit backdrop only samples its own frame — and the Telegram
-                // tail is drawn past the edge on purpose. Oversizing the blur
-                // keeps the tail from coming out hollow; `clipShape` still cuts
-                // to the real path, which may itself extend past the bounds.
-                Color.clear
-                    .overlay {
-                        VariableBackdropBlur(
-                            radius: 26,
-                            mask: .solid,
-                            saturation: 1.7,
-                            // One live backdrop per bubble is only affordable
-                            // in a scrolling list at 1x. At the screen's own 3x
-                            // this drops frames, and a 26pt blur has no detail
-                            // left to lose by being sampled coarsely.
-                            resolutionScale: 1
-                        )
-                        .padding(-14)
-                    }
-                    .clipShape(shape)
-            }
-        }
-        .overlay(shape.fill(tint.opacity(surfaceTintOpacity)))
-        .overlay {
-            // A faint directional gloss. Operit's fallback washes flat white
-            // over the surface; angling it keeps the bubble from looking like a
-            // sticker without implying a light source the rim contradicts.
-            shape.fill(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(isLight ? 0.10 : 0.055),
-                        Color.white.opacity(isLight ? 0.02 : 0.01),
-                        Color.clear
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-        }
-        .overlay {
-            // Operit's Highlight is 0.28dp wide but blurred at 2.4x that and
-            // drawn at alpha 0.62: a thin bright edge that fades inward rather
-            // than a drawn outline. Clipping after the blur discards the outer
-            // half, so the rim lands at roughly half this line width and the
-            // shape stays crisp. No dark side — the Compose highlight has none,
-            // and a black lower edge is what made this read as a drawn border.
-            shape
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(isLight ? 0.62 : 0.50),
-                            Color.white.opacity(isLight ? 0.26 : 0.20),
-                            Color.white.opacity(isLight ? 0.10 : 0.08)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.9
-                )
-                .blur(radius: 0.7)
-                .clipShape(shape)
-        }
-        .shadow(
-            color: Color.black.opacity(isLight ? 0.10 : 0.18),
-            radius: 12,
-            y: 3
-        )
     }
 }
 
@@ -3261,16 +3140,15 @@ struct AuthenticatedImageView: View {
 
 }
 
-struct LiquidGlassBubbleBackground: View {
+struct LiquidGlassBubbleBackground<BubbleShape: Shape>: View {
+    let shape: BubbleShape
     let tint: Color
     let tintOpacity: Double
-    let radius: CGFloat
     let settings: LiquidGlassSettings
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         GeometryReader { geometry in
-            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
             let strength = clamped(settings.strength / 100)
             let dispersion = clamped(settings.dispersion)
             let rim = clamped(settings.rimWidth)
