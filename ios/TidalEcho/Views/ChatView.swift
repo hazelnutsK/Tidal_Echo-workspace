@@ -65,7 +65,7 @@ struct ChatView: View {
         return FrostedBackdropRenderer.input(
             wallpaper: model.visibleBackgroundImage,
             frame: chatBackgroundFrame,
-            background: palette.background,
+            palette: palette,
             colorScheme: colorScheme,
             wallpaperOpacity: model.backgroundOpacity,
             wallpaperBlur: model.backgroundBlur

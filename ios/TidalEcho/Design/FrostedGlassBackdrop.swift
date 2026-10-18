@@ -43,7 +43,8 @@ enum FrostedBackdropRenderer {
         var originY: Double
         var width: Double
         var height: Double
-        var background: [Double]
+        var backgroundTop: [Double]
+        var backgroundBottom: [Double]
         var wallpaperOpacity: Double
         var wallpaperBlur: Double
 
@@ -58,7 +59,7 @@ enum FrostedBackdropRenderer {
     static func input(
         wallpaper: UIImage?,
         frame: CGRect,
-        background: Color,
+        palette: EchoPalette,
         colorScheme: ColorScheme,
         wallpaperOpacity: Double,
         wallpaperBlur: Double
@@ -70,7 +71,8 @@ enum FrostedBackdropRenderer {
             originY: frame.minY,
             width: frame.width,
             height: frame.height,
-            background: rgba(background, colorScheme: colorScheme),
+            backgroundTop: rgba(palette.backgroundTop, colorScheme: colorScheme),
+            backgroundBottom: rgba(palette.backgroundBottom, colorScheme: colorScheme),
             wallpaperOpacity: wallpaperOpacity,
             wallpaperBlur: wallpaperBlur
         )
@@ -83,12 +85,24 @@ enum FrostedBackdropRenderer {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
-        let c = input.background
+        let top = input.backgroundTop, bottom = input.backgroundBottom
         let base = UIGraphicsImageRenderer(size: size, format: format).image { ctx in
-            UIColor(red: c[0], green: c[1], blue: c[2], alpha: 1).setFill()
-            ctx.fill(CGRect(origin: .zero, size: size))
+            // palette.background: top color at the top-leading corner, bottom
+            // color at the bottom-trailing one.
+            let colors = [
+                UIColor(red: top[0], green: top[1], blue: top[2], alpha: 1).cgColor,
+                UIColor(red: bottom[0], green: bottom[1], blue: bottom[2], alpha: 1).cgColor
+            ] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors, locations: [0, 1]) {
+                ctx.cgContext.drawLinearGradient(
+                    gradient,
+                    start: .zero,
+                    end: CGPoint(x: size.width, y: size.height),
+                    options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+                )
+            }
             if let wallpaper, wallpaper.size.width > 0, wallpaper.size.height > 0 {
-                let zoom = 1 + input.wallpaperBlur / 260
+                let zoom = CGFloat(1 + input.wallpaperBlur / 260)
                 let fill = max(size.width / wallpaper.size.width, size.height / wallpaper.size.height) * zoom
                 let drawn = CGSize(width: wallpaper.size.width * fill, height: wallpaper.size.height * fill)
                 let rect = CGRect(
@@ -97,7 +111,7 @@ enum FrostedBackdropRenderer {
                     width: drawn.width,
                     height: drawn.height
                 )
-                wallpaper.draw(in: rect, blendMode: .normal, alpha: input.wallpaperOpacity)
+                wallpaper.draw(in: rect, blendMode: .normal, alpha: CGFloat(input.wallpaperOpacity))
             }
         }
         guard let cgBase = base.cgImage else { return nil }
