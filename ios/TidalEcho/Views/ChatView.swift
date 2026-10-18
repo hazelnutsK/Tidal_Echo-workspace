@@ -383,26 +383,27 @@ struct ChatView: View {
     }
 
     private func topFog(safeAreaTop: CGFloat, headerHeight: CGFloat) -> some View {
-        let height = safeAreaTop + headerHeight + 12
-        // Blur and tint hold one steady strength down to the middle of the
-        // header row, then fade out below it, like the PWA's fog. The old ramp
-        // ran from the very top edge to the bottom with no flat stretch, so
-        // the glass kept getting heavier all the way up to the status bar.
-        let plateau = min(0.85, (safeAreaTop + headerHeight * 0.5) / height)
+        let height = safeAreaTop + headerHeight + 16
+        // Copied from the PWA's .topfog, whose visible blur is its outer 2.5px
+        // layer (the nested ::before/::after backdrops sample almost nothing):
+        // solid down to 55% of the band, then a long linear fade, so glyphs
+        // dissolve gradually and then stop at one light, steady blur. WebKit
+        // hands CSS blur(2.5px) to this same filter at radius 2.5.
+        let tintSolid = min(0.5, safeAreaTop * 0.8 / height)
         return ZStack {
             VariableBackdropBlur(
-                radius: isNest ? 3 : 4,
+                radius: isNest ? 2 : 2.5,
                 mask: .blurredTopClearBottom,
-                fadeFrom: plateau,
+                fadeFrom: 0.55,
                 fadeTo: 1,
-                falloff: .gentle
+                falloff: .linear
             )
 
             Rectangle()
                 .fill(topFogTint)
                 .mask(
                     LinearGradient(
-                        stops: topFogStops(plateau: plateau),
+                        stops: topFogStops(solidUntil: tintSolid),
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -443,20 +444,14 @@ struct ChatView: View {
         }
     }
 
-    private func topFogStops(plateau: CGFloat) -> [Gradient.Stop] {
-        // Full tint across the plateau, then the same eased fade as the blur
-        // so the two leave together instead of drawing a second edge.
+    private func topFogStops(solidUntil solid: CGFloat) -> [Gradient.Stop] {
+        // The PWA's tint mask: solid behind the status bar, gone by 78%.
         let peak: Double = isNest ? 0.60 : 1
-        let fade = (0...16).map { index -> Gradient.Stop in
-            let t = CGFloat(index) / 16
-            let progress = 1 - t
-            let smooth = progress * progress * (3 - 2 * progress)
-            return Gradient.Stop(
-                color: Color.black.opacity(Double(smooth * smooth) * peak),
-                location: plateau + (1 - plateau) * t
-            )
-        }
-        return [Gradient.Stop(color: Color.black.opacity(peak), location: 0)] + fade
+        return [
+            Gradient.Stop(color: Color.black.opacity(peak), location: 0),
+            Gradient.Stop(color: Color.black.opacity(peak), location: solid),
+            Gradient.Stop(color: Color.black.opacity(0), location: 0.78)
+        ]
     }
 
     /// The original bar keeps its old look: its marker used to sit inside the row
