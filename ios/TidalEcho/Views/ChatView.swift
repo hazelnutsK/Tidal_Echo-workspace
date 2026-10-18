@@ -383,13 +383,17 @@ struct ChatView: View {
     }
 
     private func topFog(safeAreaTop: CGFloat, headerHeight: CGFloat) -> some View {
-        ZStack {
-            // Keep the strongest blur near the status bar and only a short,
-            // gentle fade below the header, so a small scroll stays legible.
+        let height = safeAreaTop + headerHeight + 12
+        // Blur and tint hold one steady strength down to the middle of the
+        // header row, then fade out below it, like the PWA's fog. The old ramp
+        // ran from the very top edge to the bottom with no flat stretch, so
+        // the glass kept getting heavier all the way up to the status bar.
+        let plateau = min(0.85, (safeAreaTop + headerHeight * 0.5) / height)
+        return ZStack {
             VariableBackdropBlur(
-                radius: isNest ? 5 : 7,
+                radius: isNest ? 3 : 4,
                 mask: .blurredTopClearBottom,
-                fadeFrom: 0,
+                fadeFrom: plateau,
                 fadeTo: 1,
                 falloff: .gentle
             )
@@ -398,13 +402,13 @@ struct ChatView: View {
                 .fill(topFogTint)
                 .mask(
                     LinearGradient(
-                        stops: topFogStops,
+                        stops: topFogStops(plateau: plateau),
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
         }
-        .frame(height: safeAreaTop + headerHeight + 12)
+        .frame(height: height)
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
     }
@@ -428,25 +432,31 @@ struct ChatView: View {
         .accessibilityLabel(label)
     }
 
+    /// Light enough that the fog reads as air over the messages, not a milky
+    /// sheet; the status bar text still sits on the plateau's full tint.
     private var topFogTint: Color {
         switch model.theme {
-        case .mist: return Color(hex: 0xECF1F6).opacity(0.12)
-        case .paper: return Color(hex: 0xFAFAF8).opacity(0.36)
-        case .harbor: return Color.black.opacity(0.19)
-        case .nest: return Color(hex: 0xF7F7F5).opacity(0.23)
+        case .mist: return Color(hex: 0xECF1F6).opacity(0.10)
+        case .paper: return Color(hex: 0xFAFAF8).opacity(0.22)
+        case .harbor: return Color.black.opacity(0.16)
+        case .nest: return Color(hex: 0xF7F7F5).opacity(0.16)
         }
     }
 
-    private var topFogStops: [Gradient.Stop] {
-        // Let the glyph lose focus before the tint washes it away. Match the
-        // blur's eased entrance instead of adding another visible fade edge.
-        (0...24).map { index in
-            let location = CGFloat(index) / 24
-            let progress = 1 - location
+    private func topFogStops(plateau: CGFloat) -> [Gradient.Stop] {
+        // Full tint across the plateau, then the same eased fade as the blur
+        // so the two leave together instead of drawing a second edge.
+        let peak: Double = isNest ? 0.60 : 1
+        let fade = (0...16).map { index -> Gradient.Stop in
+            let t = CGFloat(index) / 16
+            let progress = 1 - t
             let smooth = progress * progress * (3 - 2 * progress)
-            let strength = Double(smooth * smooth) * (isNest ? 0.60 : 1)
-            return .init(color: .black.opacity(strength), location: location)
+            return Gradient.Stop(
+                color: Color.black.opacity(Double(smooth * smooth) * peak),
+                location: plateau + (1 - plateau) * t
+            )
         }
+        return [Gradient.Stop(color: Color.black.opacity(peak), location: 0)] + fade
     }
 
     /// The original bar keeps its old look: its marker used to sit inside the row
