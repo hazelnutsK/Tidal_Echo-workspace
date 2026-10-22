@@ -32,6 +32,7 @@ struct SavedAppearance: Codable, Identifiable, Hashable {
         var humanBubbleOpacity: Double
         var bubbleRadius: Double
         var bubbleWidthScale: Double
+        var bubbleSpacingScale: Double?
         var bubblePaddingX: Double
         var bubblePaddingY: Double
         var bubbleBorderWidth: Double

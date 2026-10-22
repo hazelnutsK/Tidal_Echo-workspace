@@ -84,6 +84,7 @@ private enum IncomingCallCardState: Equatable {
 struct MessageRow: View {
     @Environment(\.timestampColor) private var timestampColor
     @Environment(\.bubblePaddingOffset) private var bubblePaddingOffset
+    @Environment(\.bubbleSpacingScale) private var bubbleSpacingScale
     @State private var showsVoiceTranscript = false
     let message: ChatMessage
     let palette: EchoPalette
@@ -182,7 +183,7 @@ struct MessageRow: View {
                 bubble
             }
         }
-        .padding(.top, isGroupedWithPrevious ? compactGroupTopPadding : 0)
+        .padding(.top, isGroupedWithPrevious ? compactGroupTopPadding * CGFloat(bubbleSpacingScale) : 0)
     }
 
     private var callLifecycleEvent: CallLifecycleEvent? {

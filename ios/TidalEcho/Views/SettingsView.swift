@@ -1080,7 +1080,16 @@ private struct AppearanceSettingsView: View {
                 note: "超过 120% 时只继续放宽 AI 气泡"
             )
 
-            VStack(spacing: 10) {
+            settingSlider(
+                title: "气泡间距",
+                valueText: "\(Int((model.bubbleSpacingScale * 100).rounded()))%",
+                value: $model.bubbleSpacingScale,
+                range: 0...3,
+                step: 0.1,
+                note: "0% 最紧，100% 是当前主题的默认间距。只调整消息之间的距离。"
+            )
+
+            VStack(spacing: model.chatMessageSpacing) {
                 paddingPreviewBubble("这样字离边近一点", isHuman: false)
                 paddingPreviewBubble("再松一点", isHuman: true)
             }
@@ -1187,6 +1196,7 @@ private struct AppearanceSettingsView: View {
                 model.humanBubbleOpacity = 1
                 model.bubbleRadius = 14
                 model.bubbleWidthScale = 1
+                model.bubbleSpacingScale = 1
                 model.bubblePaddingX = 0
                 model.bubblePaddingY = 0
                 model.bubbleBorderWidth = 0
@@ -1311,6 +1321,8 @@ private struct AppearanceSettingsView: View {
             }
             Slider(value: value, in: range, step: step)
                 .tint(palette.accent)
+                .accessibilityLabel(title)
+                .accessibilityValue(valueText)
                 .disabled(!isEnabled)
             if let note {
                 Text(note)

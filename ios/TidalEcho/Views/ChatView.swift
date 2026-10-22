@@ -195,6 +195,7 @@ struct ChatView: View {
         .environment(\.processTitleFont, model.processTitleFont)
         .environment(\.showsProcessDisclosure, model.showsProcessDisclosure)
         .environment(\.bubblePaddingOffset, model.bubblePaddingOffset)
+        .environment(\.bubbleSpacingScale, model.bubbleSpacingScale)
         .task(id: frostedBackdropInput) {
             await renderFrostedBackdrop(frostedBackdropInput)
         }
@@ -466,7 +467,7 @@ struct ChatView: View {
             GeometryReader { viewport in
                 ScrollView {
                     VStack(spacing: 0) {
-                    LazyVStack(spacing: isNest ? 13 : 9) {
+                    LazyVStack(spacing: model.chatMessageSpacing) {
                     if canTriggerOlderHistory && model.canLoadOlderHistory {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)

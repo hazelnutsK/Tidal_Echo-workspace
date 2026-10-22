@@ -126,6 +126,10 @@ final class AppModel: ObservableObject {
     @Published var bubbleWidthScale: Double {
         didSet { UserDefaults.standard.set(bubbleWidthScale, forKey: Keys.bubbleWidthScale) }
     }
+    /// 1＝主题默认间距，0＝贴紧；连续消息原有的紧凑比例也一起缩放。
+    @Published var bubbleSpacingScale: Double {
+        didSet { UserDefaults.standard.set(bubbleSpacingScale, forKey: Keys.bubbleSpacingScale) }
+    }
     /// 气泡内边距在主题基准值上的增减（pt），0＝主题原样。
     @Published var bubblePaddingX: Double {
         didSet { UserDefaults.standard.set(bubblePaddingX, forKey: Keys.bubblePaddingX) }
@@ -256,6 +260,7 @@ final class AppModel: ObservableObject {
         static let showsHumanAvatar = "tidalEcho.showsHumanAvatar"
         static let showsClawdPet = "tidalEcho.showsClawdPet"
         static let bubbleWidthScale = "tidalEcho.bubbleWidthScale"
+        static let bubbleSpacingScale = "tidalEcho.bubbleSpacingScale"
         static let bubblePaddingX = "tidalEcho.bubblePaddingX"
         static let bubblePaddingY = "tidalEcho.bubblePaddingY"
         static let bubbleBorderWidth = "tidalEcho.bubbleBorderWidth"
@@ -367,6 +372,7 @@ final class AppModel: ObservableObject {
         showsHumanAvatar = defaults.object(forKey: Keys.showsHumanAvatar) == nil ? false : defaults.bool(forKey: Keys.showsHumanAvatar)
         showsClawdPet = defaults.object(forKey: Keys.showsClawdPet) == nil ? true : defaults.bool(forKey: Keys.showsClawdPet)
         bubbleWidthScale = defaults.object(forKey: Keys.bubbleWidthScale) == nil ? 1 : defaults.double(forKey: Keys.bubbleWidthScale)
+        bubbleSpacingScale = defaults.object(forKey: Keys.bubbleSpacingScale) == nil ? 1 : min(3, max(0, defaults.double(forKey: Keys.bubbleSpacingScale)))
         bubblePaddingX = defaults.double(forKey: Keys.bubblePaddingX)
         bubblePaddingY = defaults.double(forKey: Keys.bubblePaddingY)
         bubbleBorderWidth = defaults.object(forKey: Keys.bubbleBorderWidth) == nil ? 0 : defaults.double(forKey: Keys.bubbleBorderWidth)
@@ -1539,6 +1545,7 @@ final class AppModel: ObservableObject {
     var customProcessTitleColor: Color? { Color(hexString: processTitleColorHex) }
     var customTimestampColor: Color? { Color(hexString: timestampColorHex) }
     var bubblePaddingOffset: CGSize { CGSize(width: bubblePaddingX, height: bubblePaddingY) }
+    var chatMessageSpacing: CGFloat { (theme == .nest ? 13 : 9) * CGFloat(bubbleSpacingScale) }
 
     func setProcessTitleColor(_ color: Color) {
         processTitleColorHex = Self.hexString(color) ?? ""
@@ -1596,6 +1603,7 @@ final class AppModel: ObservableObject {
             humanBubbleOpacity: humanBubbleOpacity,
             bubbleRadius: bubbleRadius,
             bubbleWidthScale: bubbleWidthScale,
+            bubbleSpacingScale: bubbleSpacingScale,
             bubblePaddingX: bubblePaddingX,
             bubblePaddingY: bubblePaddingY,
             bubbleBorderWidth: bubbleBorderWidth,
@@ -1672,6 +1680,7 @@ final class AppModel: ObservableObject {
         humanBubbleOpacity = v.humanBubbleOpacity
         bubbleRadius = v.bubbleRadius
         bubbleWidthScale = v.bubbleWidthScale
+        bubbleSpacingScale = min(3, max(0, v.bubbleSpacingScale ?? 1))
         bubblePaddingX = v.bubblePaddingX
         bubblePaddingY = v.bubblePaddingY
         bubbleBorderWidth = v.bubbleBorderWidth

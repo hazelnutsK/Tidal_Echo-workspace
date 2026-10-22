@@ -640,6 +640,8 @@ extension EnvironmentValues {
     @Entry var showsProcessDisclosure: Bool = true
     /// 外观里“气泡内边距”拉条：width＝左右、height＝上下，在各主题基准值上加减。
     @Entry var bubblePaddingOffset: CGSize = .zero
+    /// 同时缩放消息列表的间距和连续消息的紧凑修正，0 时也不会重叠。
+    @Entry var bubbleSpacingScale: Double = 1
 }
 
 extension Double {
