@@ -3768,10 +3768,11 @@ enum SpaceReviewFixture {
         ProcessInfo.processInfo.environment["REVIEW_SPACE_PAGE"] ?? "home"
     }
 
-    static func makeModel() -> AppModel {
+    /// 不传参数就照 CI 的环境变量来；Xcode 预览直接指定主题和要不要底图。
+    static func makeModel(theme: EchoTheme? = nil, wallpaper: Bool? = nil) -> AppModel {
         let model = AppModel()
         let env = ProcessInfo.processInfo.environment
-        model.theme = EchoTheme(rawValue: env["REVIEW_THEME"] ?? "mist") ?? .mist
+        model.theme = theme ?? EchoTheme(rawValue: env["REVIEW_THEME"] ?? "mist") ?? .mist
         model.chatFont = .system
         model.fontScale = 1
         model.chatWeight = 400
@@ -3783,8 +3784,10 @@ enum SpaceReviewFixture {
         } else if page == "login" {
             UserDefaults.standard.removeObject(forKey: "tidalEcho.relayURL")
         }
-        if env["REVIEW_WALLPAPER"] == "1" {
+        if wallpaper ?? (env["REVIEW_WALLPAPER"] == "1") {
             SpaceWallpaper.shared.installForReview(reviewWallpaper(dark: model.theme == .harbor))
+        } else if wallpaper == false {
+            SpaceWallpaper.shared.removeForReview()
         }
         return model
     }
@@ -3813,5 +3816,24 @@ enum SpaceReviewFixture {
             context.cgContext.fill(CGRect(x: 0, y: 600, width: 400, height: 260))
         }
     }
+}
+
+// Xcode 右边的画布：改卡片、字、颜色的时候边改边看，吃的是上面那套样例数据。
+#Preview("空间 · 墨白") {
+    let model = SpaceReviewFixture.makeModel(theme: .mist, wallpaper: false)
+    SpaceReviewScreen(model: model, page: "home")
+        .preferredColorScheme(model.theme.preferredColorScheme)
+}
+
+#Preview("空间 · 夜港") {
+    let model = SpaceReviewFixture.makeModel(theme: .harbor, wallpaper: false)
+    SpaceReviewScreen(model: model, page: "home")
+        .preferredColorScheme(model.theme.preferredColorScheme)
+}
+
+#Preview("空间 · 带底图") {
+    let model = SpaceReviewFixture.makeModel(theme: .mist, wallpaper: true)
+    SpaceReviewScreen(model: model, page: "home")
+        .preferredColorScheme(model.theme.preferredColorScheme)
 }
 #endif

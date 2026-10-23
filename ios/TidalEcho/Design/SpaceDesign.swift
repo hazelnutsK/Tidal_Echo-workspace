@@ -9,10 +9,12 @@ import UIKit
 // 底图可以自己换（主页顶上清楚、往下糊成雾，其余页面铺糊掉的那层）。
 
 enum SpaceReview {
-    /// CI 截图用：不连 relay，页面直接吃样例数据。
+    /// CI 截图和 Xcode 预览用：不连 relay，页面直接吃样例数据。
     static var isActive: Bool {
         #if DEBUG
-        return ProcessInfo.processInfo.arguments.contains("--space-ui-review")
+        let process = ProcessInfo.processInfo
+        return process.arguments.contains("--space-ui-review")
+            || process.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
         #else
         return false
         #endif
@@ -176,6 +178,13 @@ final class SpaceWallpaper: ObservableObject {
         image = picture
         blurred = Self.makeBlur(picture, radius: Self.lightRadius)
         soft = Self.makeBlur(picture, radius: Self.softRadius)
+    }
+
+    /// 预览几页共用一个进程：没要底图的那页把上一页留下的摘掉。
+    func removeForReview() {
+        image = nil
+        blurred = nil
+        soft = nil
     }
     #endif
 
