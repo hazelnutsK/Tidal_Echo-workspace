@@ -39,11 +39,15 @@ struct SpaceStyle {
 
     var glassTint: Color { isDark ? Color(hex: 0x1E1E20).opacity(0.46) : Color.white.opacity(0.34) }
     var glassStrong: Color { isDark ? Color(hex: 0x2A2A2D).opacity(0.82) : Color.white.opacity(0.74) }
-    /// 卡片玻璃的染色：只给一点点，底图的颜色和轮廓要透得过来。
-    var cardTint: Color { isDark ? Color.black.opacity(0.16) : Color.white.opacity(0.05) }
+    /// 卡片玻璃的染色：底图已经糊开了，再薄薄压一层，字才站得住，颜色还透得过来。
+    var cardTint: Color { isDark ? Color.black.opacity(0.2) : Color.white.opacity(0.12) }
     /// 光从左上打过来：左上角亮一层，往右下淡掉。
-    var sheen: Color { isDark ? Color.white.opacity(0.05) : Color.white.opacity(0.22) }
+    var sheen: Color { isDark ? Color.white.opacity(0.06) : Color.white.opacity(0.2) }
     var edge: Color { isDark ? Color.white.opacity(0.08) : Color.white.opacity(0.78) }
+    /// 卡片那圈亮边：玻璃切口接住光的地方，左上最亮。
+    var rim: Color { isDark ? Color.white.opacity(0.3) : Color.white.opacity(0.9) }
+    /// 亮边往里化开的那层光晕，让厚玻璃的边是软的。
+    var rimGlow: Color { isDark ? Color.white.opacity(0.07) : Color.white.opacity(0.42) }
     var glow: Color { isDark ? Color.white.opacity(0.75) : Color.black.opacity(0.28) }
     var veilTop: Color { isDark ? Color.black.opacity(0.15) : Color(hex: 0xF3F3F1).opacity(0) }
     var veil: Color { isDark ? Color.black.opacity(0.32) : Color(hex: 0xF3F3F1).opacity(0.12) }
@@ -294,39 +298,56 @@ struct SpaceBackdrop: View {
 
 // MARK: - 玻璃
 
-// 09-25 她嫌雾面玻璃太白、底图透不过来：卡片改成系统液态玻璃，底图的轮廓和颜色透过来、
-// 又被化开；上面只薄薄染一层白，再从左上打一道光。strong 的小浮条（时间轴气泡）还是厚一点。
+// 09-25 她嫌雾面玻璃太白、底图透不过来，换成了系统液态玻璃。10-23 她又拿了两张参考图
+// （芥末设计的高级感卡片）：底图在卡片里糊得很开、只剩颜色和大轮廓，染色压得很薄，
+// 一圈亮边往里化开一层光。液态玻璃化得太浅、边是折射不是光，就换回自己糊：实时模糊开大，
+// 糊之前提一点饱和，不然颜色会被平均成灰。strong 的小浮条（时间轴气泡）还是厚一点。
 struct SpaceGlass: ViewModifier {
     let style: SpaceStyle
     var radius: CGFloat = 22
     var strong = false
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         content
             .background {
                 ZStack {
-                    shape
-                        .fill(Color.white.opacity(0.001))
-                        .glassEffect(.regular.tint(strong ? style.glassStrong : style.cardTint), in: shape)
+                    if reduceTransparency {
+                        shape.fill(style.isDark ? Color(hex: 0x1C1C1E) : Color(hex: 0xF7F7F5))
+                    } else {
+                        // 糊开的那层往外多铺一圈：模糊在自己边上取不到样会发暗，裁掉就干净了。
+                        Color.clear.overlay {
+                            VariableBackdropBlur(radius: strong ? 22 : 30, mask: .solid, saturation: 1.4, resolutionScale: 1)
+                                .padding(-16)
+                        }
+                        shape.fill(strong ? style.glassStrong : style.cardTint)
+                    }
                     shape.fill(
                         LinearGradient(
                             colors: [style.sheen, style.sheen.opacity(0)],
                             startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                            endPoint: .center
                         )
                     )
+                    // 亮边往里化开的光晕：粗描一圈再糊掉，裁掉外半边，只剩往里渗的那层。
+                    shape
+                        .strokeBorder(style.rimGlow, lineWidth: 10)
+                        .blur(radius: 9)
                 }
+                .clipShape(shape)
+                .allowsHitTesting(false)
             }
             .overlay(
                 shape.strokeBorder(
                     LinearGradient(
-                        colors: [style.edge, style.edge.opacity(0.2)],
+                        colors: [style.rim, style.rim.opacity(0.28), style.rim.opacity(0.6)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: 0.6
+                    lineWidth: 0.8
                 )
+                .allowsHitTesting(false)
             )
     }
 }
