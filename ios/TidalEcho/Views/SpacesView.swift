@@ -788,7 +788,7 @@ private struct DesireCard: View {
     @State private var expanded = false
     @State private var barsShown = false
 
-    private let order = ["attachment", "libido", "reflection", "curiosity", "social", "duty", "stress", "fatigue"]
+    private let order: [String] = ["attachment", "libido", "reflection", "curiosity", "social", "duty", "stress", "fatigue"]
     private let names = [
         "attachment": "想她", "curiosity": "好奇", "reflection": "沉淀", "duty": "记挂",
         "social": "看人群", "libido": "贴贴", "stress": "压力", "fatigue": "疲惫"
@@ -1337,7 +1337,8 @@ private struct AlbumView: View {
 
     private func albumDayHeader(_ date: Date) -> some View {
         let calendar = SpaceMonth.beijing
-        let weekday = ["日", "一", "二", "三", "四", "五", "六"][max(0, min(6, calendar.component(.weekday, from: date) - 1))]
+        let weekdays: [String] = ["日", "一", "二", "三", "四", "五", "六"]
+        let weekday = weekdays[max(0, min(6, calendar.component(.weekday, from: date) - 1))]
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(String(format: "%02d", calendar.component(.day, from: date)))
                 .font(SpaceFont.display(26))
@@ -2227,8 +2228,10 @@ private struct MomentCommentsBlock: View {
     }
 
     private var likeNames: String {
-        ["human", "ai"].filter { post.meta.likes[$0] != nil }
-            .map { $0 == "human" ? "小雪" : "Altair" }
+        // 类型写明：Xcode 预览把字面量换掉以后，靠推断会算不完
+        let keys: [String] = ["human", "ai"]
+        return keys.filter { post.meta.likes[$0] != nil }
+            .map { (key: String) -> String in key == "human" ? "小雪" : "Altair" }
             .joined(separator: "、")
     }
 
@@ -3060,7 +3063,7 @@ struct EchoCalendarView: View {
         }
         let days = beijing.dateComponents([.day], from: today, to: next).day ?? 0
         let count = year - (startParts.year ?? year)
-        let ordinals = ["", "一", "两", "三", "四", "五", "六", "七", "八", "九", "十"]
+        let ordinals: [String] = ["", "一", "两", "三", "四", "五", "六", "七", "八", "九", "十"]
         let countText = count > 0 && count < ordinals.count ? ordinals[count] : "\(count)"
         let lead = Text("离 \(startParts.month ?? 5)·\(startParts.day ?? 27) \(countText)周年还有")
             .font(.system(size: 13))
@@ -3171,7 +3174,7 @@ struct EchoCalendarView: View {
 
     /// 这里的 date 都是 spaceDate(fromKey:) 给的北京零点，按北京日历读。
     private func weekdayText(_ date: Date) -> String {
-        let names = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+        let names: [String] = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
         return names[max(0, min(6, SpaceMonth.beijing.component(.weekday, from: date) - 1))]
     }
 }
