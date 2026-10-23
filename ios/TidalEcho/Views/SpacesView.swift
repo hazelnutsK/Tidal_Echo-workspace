@@ -679,11 +679,12 @@ private struct SpaceWeatherTile: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            (Text(weather.map { "\(Int($0.temperature.rounded()))" } ?? "--")
+            let degrees = Text(weather.map { "\(Int($0.temperature.rounded()))" } ?? "--")
                 .font(SpaceFont.display(56))
-             + Text("°")
+            let mark = Text("°")
                 .font(SpaceFont.display(26))
-                .baselineOffset(24))
+                .baselineOffset(24)
+            Text("\(degrees)\(mark)")
                 .lineLimit(1)
                 .foregroundStyle(style.ink)
                 .spaceReveal(weather == nil)
@@ -2234,14 +2235,14 @@ private struct MomentCommentsBlock: View {
     private func commentText(_ item: MomentComment) -> Text {
         let name = Text(momentAuthorName(item.author)).fontWeight(.semibold).foregroundStyle(style.ink)
         let body = Text(item.text).foregroundStyle(style.ink)
+        let colon = Text("：").foregroundStyle(style.ink)
+        // 一段一段先拼好再插值：用 + 连起来，Xcode 预览把字面量换成可调的以后类型检查算不完
         if let target = item.replyTo {
-            return name
-                + Text(" 回复 ").foregroundStyle(style.sub)
-                + Text(momentAuthorName(target)).fontWeight(.semibold).foregroundStyle(style.ink)
-                + Text("：").foregroundStyle(style.ink)
-                + body
+            let reply = Text(" 回复 ").foregroundStyle(style.sub)
+            let targetName = Text(momentAuthorName(target)).fontWeight(.semibold).foregroundStyle(style.ink)
+            return Text("\(name)\(reply)\(targetName)\(colon)\(body)")
         }
-        return name + Text("：").foregroundStyle(style.ink) + body
+        return Text("\(name)\(colon)\(body)")
     }
 }
 
@@ -2368,17 +2369,16 @@ private struct JournalDropCapPreview: View {
 
     var body: some View {
         if let first = cleanText.first {
-            (
-                Text(String(first))
-                    .font(literary.font(size: 40, weight: .medium))
-                    .baselineOffset(-8)
-                + Text(String(cleanText.dropFirst()))
-                    .font(literary.font(size: 14))
-            )
-            .foregroundStyle(style.ink)
-            .lineSpacing(6)
-            .lineLimit(5)
-            .multilineTextAlignment(.leading)
+            let initial = Text(String(first))
+                .font(literary.font(size: 40, weight: .medium))
+                .baselineOffset(-8)
+            let rest = Text(String(cleanText.dropFirst()))
+                .font(literary.font(size: 14))
+            Text("\(initial)\(rest)")
+                .foregroundStyle(style.ink)
+                .lineSpacing(6)
+                .lineLimit(5)
+                .multilineTextAlignment(.leading)
         } else {
             Text("尚未写下正文")
                 .font(literary.font(size: 14))
@@ -2857,11 +2857,12 @@ struct EchoCalendarView: View {
 
     private var monthHeader: some View {
         HStack(alignment: .firstTextBaseline) {
-            (Text(englishMonth(displayedMonth))
+            let monthName = Text(englishMonth(displayedMonth))
                 .font(SpaceFont.display(34))
-             + Text("  \(String(calendar.component(.year, from: displayedMonth)))")
+            let year = Text("  \(String(calendar.component(.year, from: displayedMonth)))")
                 .font(.system(size: 13))
-                .foregroundStyle(style.sub))
+                .foregroundStyle(style.sub)
+            Text("\(monthName)\(year)")
             Spacer()
             HStack(spacing: 20) {
                 Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }
@@ -3061,15 +3062,16 @@ struct EchoCalendarView: View {
         let count = year - (startParts.year ?? year)
         let ordinals = ["", "一", "两", "三", "四", "五", "六", "七", "八", "九", "十"]
         let countText = count > 0 && count < ordinals.count ? ordinals[count] : "\(count)"
-        return Text("离 \(startParts.month ?? 5)·\(startParts.day ?? 27) \(countText)周年还有")
+        let lead = Text("离 \(startParts.month ?? 5)·\(startParts.day ?? 27) \(countText)周年还有")
             .font(.system(size: 13))
             .foregroundStyle(style.sub)
-            + Text(" \(days) ")
+        let number = Text(" \(days) ")
             .font(SpaceFont.display(26))
             .foregroundStyle(style.ink)
-            + Text("天")
+        let unit = Text("天")
             .font(.system(size: 13))
             .foregroundStyle(style.sub)
+        return Text("\(lead)\(number)\(unit)")
     }
 
     /// 没到日子的祝福：封着，那天早上才能拆。
