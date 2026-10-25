@@ -16,7 +16,8 @@ enum IMessageReviewFixture {
         model.composerStyle = ComposerStyle(rawValue: env["REVIEW_COMPOSER"] ?? "original") ?? .original
         model.chatFont = EchoChatFont(rawValue: env["REVIEW_FONT"] ?? "system") ?? .system
         model.bubbleStyle = .classic
-        model.bubbleShapeStyle = EchoBubbleShapeStyle(rawValue: env["REVIEW_BUBBLE_SHAPE"] ?? "standard") ?? .standard
+        // Four round corners, no tail, like her own bubbles.
+        model.bubbleShapeStyle = EchoBubbleShapeStyle(rawValue: env["REVIEW_BUBBLE_SHAPE"] ?? "jelly") ?? .jelly
         model.showsAIBubble = true
         model.fontScale = 1
         model.chatWeight = 400
@@ -26,7 +27,7 @@ enum IMessageReviewFixture {
         model.backgroundBlur = 0
         model.backgroundOpacity = 1
         model.aiAvatarImage = avatar()
-        model.backgroundImage = wallpaper(dark: model.theme == .harbor)
+        model.backgroundImage = flowerWallpaper() ?? wallpaper(dark: model.theme == .harbor)
         var messages: [(MessageAuthor, String)] = [
             (MessageAuthor.human, "看看新的聊天布局"),
             (.ai, "顶上左边返回，右边是终端和空间。"),
@@ -102,6 +103,13 @@ enum IMessageReviewFixture {
                 .foregroundColor: UIColor.white
             ])
         }
+    }
+
+    /// Her pressed-flower wallpaper (2026-10-25), bundled for previews only.
+    private static func flowerWallpaper() -> UIImage? {
+        let url = Bundle.main.url(forResource: "review-wallpaper", withExtension: "jpg")
+            ?? Bundle.main.url(forResource: "review-wallpaper", withExtension: "jpg", subdirectory: "Review")
+        return url.flatMap { UIImage(contentsOfFile: $0.path) }
     }
 
     private static func wallpaper(dark: Bool) -> UIImage {
