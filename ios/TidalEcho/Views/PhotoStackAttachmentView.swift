@@ -53,7 +53,9 @@ struct PhotoStackAttachmentView: View {
                     request: request(attachment),
                     palette: palette,
                     contentMode: .fill,
-                    allowsPreview: !suppressesPreview
+                    allowsPreview: !suppressesPreview,
+                    gallery: attachments.map(request),
+                    galleryIndex: index
                 )
                 .frame(width: Metrics.cardWidth, height: Metrics.cardHeight)
                 .clipped()

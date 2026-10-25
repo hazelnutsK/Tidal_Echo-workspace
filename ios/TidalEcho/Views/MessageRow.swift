@@ -3087,6 +3087,9 @@ struct AuthenticatedImageView: View {
     var contentMode: ContentMode = .fit
     var allowsPreview = true
     var previewCornerRadius: CGFloat = 0
+    /// 同一条消息里的全部图；点开大图后能左右滑着看。
+    var gallery: [URLRequest?] = []
+    var galleryIndex = 0
     @StateObject private var loader = AuthenticatedImageLoader()
     @State private var previewImage: ImagePreviewItem?
 
@@ -3095,13 +3098,17 @@ struct AuthenticatedImageView: View {
         palette: EchoPalette,
         contentMode: ContentMode = .fit,
         allowsPreview: Bool = true,
-        previewCornerRadius: CGFloat = 0
+        previewCornerRadius: CGFloat = 0,
+        gallery: [URLRequest?] = [],
+        galleryIndex: Int = 0
     ) {
         self.request = request
         self.palette = palette
         self.contentMode = contentMode
         self.allowsPreview = allowsPreview
         self.previewCornerRadius = previewCornerRadius
+        self.gallery = gallery
+        self.galleryIndex = galleryIndex
     }
 
     var body: some View {
@@ -3115,14 +3122,14 @@ struct AuthenticatedImageView: View {
                     .contentShape(RoundedRectangle(cornerRadius: previewCornerRadius, style: .continuous))
                     .onTapGesture {
                         guard allowsPreview else { return }
-                        previewImage = ImagePreviewItem(image: image)
+                        previewImage = ImagePreviewItem(image: image, gallery: gallery, index: galleryIndex)
                     }
                     .accessibilityElement()
                     .accessibilityLabel("打开图片预览")
                     .accessibilityAddTraits(.isButton)
                     .accessibilityAction {
                         guard allowsPreview else { return }
-                        previewImage = ImagePreviewItem(image: image)
+                        previewImage = ImagePreviewItem(image: image, gallery: gallery, index: galleryIndex)
                     }
             } else if loader.failed {
                 Label("图片加载失败", systemImage: "photo.badge.exclamationmark")
@@ -3138,7 +3145,7 @@ struct AuthenticatedImageView: View {
         .background(palette.composer.opacity(0.45))
         .task(id: request?.url?.absoluteString) { await loader.load(request) }
         .fullScreenCover(item: $previewImage) { item in
-            FullScreenImagePreview(image: item.image)
+            FullScreenImagePreview(item: item)
         }
     }
 
@@ -3271,42 +3278,50 @@ struct LiquidGlassBubbleBackground<BubbleShape: Shape>: View {
 private struct ImagePreviewItem: Identifiable {
     let id = UUID()
     let image: UIImage
+    /// 多图消息里的全部图（含点开的这张）；少于两张就是单图预览。
+    var gallery: [URLRequest?] = []
+    var index = 0
 }
 
 private struct FullScreenImagePreview: View {
-    let image: UIImage
+    let item: ImagePreviewItem
     @Environment(\.dismiss) private var dismiss
-    @State private var scale = 1.0
-    @State private var settledScale = 1.0
+    @State private var page: Int
+    /// 各页加载好的图，保存按钮存的是眼前这一页。
+    @State private var loadedImages: [Int: UIImage]
     @State private var isSaving = false
     @State private var didSave = false
     @State private var saveErrorMessage: String?
+
+    init(item: ImagePreviewItem) {
+        self.item = item
+        _page = State(initialValue: item.index)
+        _loadedImages = State(initialValue: [item.index: item.image])
+    }
+
+    private var isGallery: Bool { item.gallery.count > 1 }
+    private var currentImage: UIImage? { isGallery ? loadedImages[page] : item.image }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .scaleEffect(scale)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .gesture(
-                    MagnificationGesture()
-                        .onChanged { value in
-                            scale = min(max(settledScale * value, 1), 5)
-                        }
-                        .onEnded { _ in
-                            settledScale = scale
-                        }
-                )
-                .onTapGesture(count: 2) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        scale = scale > 1 ? 1 : 2
-                        settledScale = scale
+            if isGallery {
+                TabView(selection: $page) {
+                    ForEach(item.gallery.indices, id: \.self) { index in
+                        ZoomableImagePage(
+                            image: index == item.index ? item.image : nil,
+                            request: item.gallery[index],
+                            onLoad: { loadedImages[index] = $0 }
+                        )
+                        .tag(index)
                     }
                 }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .ignoresSafeArea()
+            } else {
+                ZoomableImagePage(image: item.image, request: nil, onLoad: { _ in })
+            }
 
             VStack {
                 HStack {
@@ -3325,10 +3340,21 @@ private struct FullScreenImagePreview: View {
                         .background(Color.black.opacity(0.58), in: Circle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(isSaving)
+                    .disabled(isSaving || currentImage == nil)
                     .accessibilityLabel(isSaving ? "正在保存图片" : "保存图片")
 
                     Spacer()
+
+                    if isGallery {
+                        Text("\(page + 1) / \(item.gallery.count)")
+                            .font(.system(size: 14, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Color.black.opacity(0.58), in: Capsule())
+                            .accessibilityLabel("第 \(page + 1) 张，共 \(item.gallery.count) 张")
+                        Spacer()
+                    }
 
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
@@ -3369,7 +3395,7 @@ private struct FullScreenImagePreview: View {
     }
 
     private func saveImage() {
-        guard !isSaving else { return }
+        guard !isSaving, let image = currentImage else { return }
         isSaving = true
         Task {
             let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
@@ -3391,6 +3417,56 @@ private struct FullScreenImagePreview: View {
                 isSaving = false
                 saveErrorMessage = error.localizedDescription
             }
+        }
+    }
+}
+
+/// 大图预览里的一页：双指缩放、双击放大；不是点开的那张就自己去加载。
+private struct ZoomableImagePage: View {
+    let image: UIImage?
+    let request: URLRequest?
+    let onLoad: (UIImage) -> Void
+    @StateObject private var loader = AuthenticatedImageLoader()
+    @State private var scale = 1.0
+    @State private var settledScale = 1.0
+
+    var body: some View {
+        Group {
+            if let shown = image ?? loader.image {
+                Image(uiImage: shown)
+                    .resizable()
+                    .scaledToFit()
+                    .scaleEffect(scale)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        MagnificationGesture()
+                            .onChanged { value in
+                                scale = min(max(settledScale * value, 1), 5)
+                            }
+                            .onEnded { _ in
+                                settledScale = scale
+                            }
+                    )
+                    .onTapGesture(count: 2) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            scale = scale > 1 ? 1 : 2
+                            settledScale = scale
+                        }
+                    }
+            } else if loader.failed {
+                Label("图片加载失败", systemImage: "photo.badge.exclamationmark")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.72))
+            } else {
+                ProgressView().tint(.white)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            guard image == nil else { return }
+            await loader.load(request)
+            if let loaded = loader.image { onLoad(loaded) }
         }
     }
 }
