@@ -256,24 +256,23 @@ struct MessageRow: View {
             }
 
             VStack(alignment: message.author == .human ? .trailing : .leading, spacing: 6) {
-                // 我发的图不套气泡：单独一张贴在文字上面，文字自己占一个气泡。
-                // （她 2026-09-04 定的：图和字合在一个大气泡里太闷。）
-                if !photosOutsideBubble.isEmpty {
-                    photoBlock(photosOutsideBubble)
+                // 图不套气泡：单独一张贴在文字上面，文字自己占一个气泡。
+                // （她 2026-09-04 定的：图和字合在一个大气泡里太闷；2026-10-25 她发的图也这样。）
+                if !imageAttachments.isEmpty {
+                    photoBlock(imageAttachments)
                         .contentShape(
                             .contextMenuPreview,
                             RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
                         )
                         .contextMenu { messageActions }
-                        .frame(maxWidth: resolvedBubbleMaxWidth, alignment: .leading)
+                        .frame(
+                            maxWidth: resolvedBubbleMaxWidth,
+                            alignment: message.author == .human ? .trailing : .leading
+                        )
                 }
 
                 if hasBubbleContent {
                     VStack(alignment: .leading, spacing: 9) {
-                        if !photosInsideBubble.isEmpty {
-                            photoBlock(photosInsideBubble)
-                        }
-
                         ForEach(nonImageAttachments) { attachment in
                             if isVoiceNote(attachment) {
                                 VoiceAttachmentView(
@@ -658,18 +657,10 @@ struct MessageRow: View {
     }
 
     /// 我发的图走气泡外那条路；她自己发的图保持原样留在气泡里。
-    private var photosOutsideBubble: [Attachment] {
-        message.author == .ai ? imageAttachments : []
-    }
-
-    private var photosInsideBubble: [Attachment] {
-        message.author == .ai ? [] : imageAttachments
-    }
 
     /// 气泡里还剩东西吗——纯图消息就不该再画一个空气泡出来。
     private var hasBubbleContent: Bool {
         !displayedMessageText.isEmpty
-            || !photosInsideBubble.isEmpty
             || !nonImageAttachments.isEmpty
             || message.meta.xhs != nil
             || message.meta.timer != nil
@@ -739,26 +730,10 @@ struct MessageRow: View {
             Button(action: onQuote) { Label("引用", systemImage: "quote.bubble") }
         }
         if message.id > 0 {
-            if message.author == .ai {
-                Menu {
-                    ForEach(["❤️", "😘", "😂", "🥺", "🔥", "👀"], id: \.self) { emoji in
-                        Button(emoji) { onReact(emoji) }
-                    }
-                    if myReaction != nil {
-                        Divider()
-                        Button("收回回应", role: .destructive) { onReact("") }
-                    }
-                } label: {
-                    Label("表情回应", systemImage: "face.smiling")
-                }
-            }
             Button(action: onToggleStar) {
                 Label(message.meta.starred == nil ? "收藏" : "取消收藏",
                       systemImage: message.meta.starred == nil ? "star" : "star.slash")
             }
-        }
-        if message.author == .ai && !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Button(action: onSpeak) { Label("朗读", systemImage: "speaker.wave.2") }
         }
         if message.id > 0 && message.author == .human && (message.kind == "user" || message.kind == "voice") {
             Button(action: onEdit) { Label("编辑", systemImage: "pencil") }
