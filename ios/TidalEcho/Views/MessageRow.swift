@@ -371,13 +371,13 @@ struct MessageRow: View {
                 }
 
                 if let reaction = displayedReaction, !reaction.isEmpty {
+                    // A bare emoji tucked against the bubble's lower edge; the
+                    // material capsule around it read as a clumsy box (her call).
                     Text(reaction)
-                        .font(.system(size: 17))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.thinMaterial, in: Capsule())
-                        .overlay(Capsule().stroke(palette.hairline))
-                        .padding(.top, -7)
+                        .font(.system(size: 19))
+                        .shadow(color: Color.black.opacity(0.14), radius: 2, y: 1)
+                        .padding(.horizontal, 4)
+                        .padding(.top, -12)
                         .transition(.scale.combined(with: .opacity))
                 }
 
