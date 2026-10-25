@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, Mock
 
-from stream_paragraphs import stream_paragraphs
+from stream_paragraphs import final_parts, split_sentences, stream_paragraphs, stream_parts
 
 
 class ParagraphRelayTests(unittest.IsolatedAsyncioTestCase):
@@ -39,6 +39,7 @@ class ParagraphRelayTests(unittest.IsolatedAsyncioTestCase):
             "now_iso": lambda: datetime.now(timezone.utc).isoformat(),
             "stream_drafts": {}, "STREAM_DRAFT_TTL": 600,
             "ctx_state": lambda: dict(self.settings), "stream_paragraphs": stream_paragraphs,
+            "stream_parts": stream_parts, "final_parts": final_parts,
             "app_subs": set(), "broadcast": broadcast, "app_payload": lambda m: copy.deepcopy(m),
             "HTTPException": ValueError,
             "apply_voice_note": AsyncMock(side_effect=lambda text, meta: text),
@@ -101,6 +102,19 @@ class ParagraphRelayTests(unittest.IsolatedAsyncioTestCase):
             await self.send(char)
         await self.send(done=True, final=reply)
         self.assertEqual([r["text"] for r in self.rows()], ["先抱抱", "```python\nx = 1\n\ny = 2\n```", "嗯……"])
+
+    async def test_sentence_split_streams_each_finished_sentence(self):
+        self.settings.update(short_split="sentence", short_strip_terminal_periods=True)
+        reply = "不上班爽。睡到自然醒更爽！真的吗？「好的。」\n\n等一下...然后呢"
+        landed = []
+        for char in reply:
+            await self.send(char)
+            landed.append(len(self.rows()))
+        self.assertEqual(landed[reply.index("睡") - 1], 0)   # 。 alone may still grow into 。」
+        self.assertEqual(landed[reply.index("睡")], 1)
+        await self.send(done=True, final=reply)
+        self.assertEqual([r["text"] for r in self.rows()],
+                         ["不上班爽", "睡到自然醒更爽！", "真的吗？", "「好的。」", "等一下...然后呢"])
 
     async def test_final_correction_reuses_ids_and_preserves_user_metadata(self):
         await self.send("工具前\n\n旧段\n\n尾巴")
@@ -209,6 +223,16 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(stream_paragraphs("a\n\n"), (["a"], ""))
         self.assertEqual(stream_paragraphs("a\n\n~~~\nb\n\nc"), (["a"], "~~~\nb\n\nc"))
         self.assertEqual(stream_paragraphs("[[voice]]a\n\nb"), ([], "[[voice]]a\n\nb"))
+
+    def test_sentences(self):
+        self.assertEqual(split_sentences("好。你呢？！行吧"), ["好。", "你呢？！", "行吧"])
+        self.assertEqual(split_sentences("Hi. It's 3.5 now... ok"), ["Hi.", "It's 3.5 now... ok"])
+        self.assertEqual(split_sentences("第一行\n第二行。"), ["第一行", "第二行。"])
+        self.assertEqual(split_sentences("看：\n```\na. b\n```"), ["看：\n```\na. b\n```"])
+        self.assertEqual(stream_parts("好。我", True), (["好。"], "我"))
+        self.assertEqual(stream_parts("好。", True), ([], "好。"))
+        self.assertEqual(final_parts("甲。乙\n\n丙", False), ["甲。乙", "丙"])
+        self.assertEqual(final_parts("甲。乙\n\n丙", True), ["甲。", "乙", "丙"])
 
 
 if __name__ == "__main__":

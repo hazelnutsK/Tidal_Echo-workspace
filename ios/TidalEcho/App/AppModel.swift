@@ -1851,6 +1851,12 @@ final class AppModel: ObservableObject {
         return settings
     }
 
+    func updateShortChatSplit(_ split: ShortChatSplit, mode: ChatMode) async throws -> ChatModeResponse {
+        let settings = try await requireClient().setShortChatSplit(split, mode: mode)
+        chatMode = settings.mode
+        return settings
+    }
+
     func settingsQuota() async throws -> QuotaResponse {
         try await requireClient().quota()
     }

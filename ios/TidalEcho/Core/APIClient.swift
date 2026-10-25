@@ -352,7 +352,7 @@ struct APIClient {
     func setChatMode(_ mode: ChatMode) async throws -> ChatMode {
         var req = request(url: endpoint("app/chat_mode"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(ChatModePayload(mode: mode, stripTerminalPeriods: nil))
+        req.httpBody = try JSONEncoder().encode(ChatModePayload(mode: mode, stripTerminalPeriods: nil, split: nil))
         return try decoder.decode(ChatModeResponse.self, from: try await data(for: req)).mode
     }
 
@@ -360,7 +360,16 @@ struct APIClient {
         var req = request(url: endpoint("app/chat_mode"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(
-            ChatModePayload(mode: mode, stripTerminalPeriods: enabled)
+            ChatModePayload(mode: mode, stripTerminalPeriods: enabled, split: nil)
+        )
+        return try decoder.decode(ChatModeResponse.self, from: try await data(for: req))
+    }
+
+    func setShortChatSplit(_ split: ShortChatSplit, mode: ChatMode) async throws -> ChatModeResponse {
+        var req = request(url: endpoint("app/chat_mode"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(
+            ChatModePayload(mode: mode, stripTerminalPeriods: nil, split: split)
         )
         return try decoder.decode(ChatModeResponse.self, from: try await data(for: req))
     }
@@ -806,9 +815,10 @@ private struct LoopEffortPayload: Encodable { let effort: String }
 private struct ChatModePayload: Encodable {
     let mode: ChatMode?
     let stripTerminalPeriods: Bool?
+    let split: ShortChatSplit?
 
     enum CodingKeys: String, CodingKey {
-        case mode
+        case mode, split
         case stripTerminalPeriods = "strip_terminal_periods"
     }
 }

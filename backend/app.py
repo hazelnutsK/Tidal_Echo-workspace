@@ -43,7 +43,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import desire  # 欲望内核（backend/desire.py，纯函数）
 import call_state
 import vps_cc
-from stream_paragraphs import stream_paragraphs
+from stream_paragraphs import final_parts, split_sentences, stream_paragraphs, stream_parts
 import recall  # 每轮自动浮现旧记忆（backend/recall.py）
 import xhs     # 她丢来的小红书链接展开成笔记+配图（backend/xhs.py）
 import binaural  # [[voice]] 里的 [左耳][脑后]… → 双耳语音条（backend/binaural.py）
@@ -1093,7 +1093,8 @@ async def handle_paragraph_stream(stream_id: str, draft: dict, done: bool) -> di
         atts = meta.get("attachments") or []
         atomic = any(meta.get(k) for k in ("timer", "ask", "peek", "album")) or any(
             a.get("kind") != "image" for a in atts)
-        parts, tail = ([], raw) if atomic else stream_paragraphs(raw)
+        by_sentence = draft["paragraph_settings"].get("short_split") == "sentence"
+        parts, tail = ([], raw) if atomic else stream_parts(raw, by_sentence)
         for part in parts[len(saved):]:
             msg = save_message("out", "reply", paragraph_text(part, draft),
                                paragraph_meta(stream_id, draft, len(saved)))
@@ -1125,9 +1126,7 @@ async def handle_paragraph_stream(stream_id: str, draft: dict, done: bool) -> di
     if atomic:
         parts = [text.strip()] if text.strip() or atts else []
     else:
-        parts, tail = stream_paragraphs(text)
-        if tail.strip():
-            parts.append(tail.strip())
+        parts = final_parts(text, draft["paragraph_settings"].get("short_split") == "sentence")
     # Remove the live tail explicitly, including silent replies and a final LF.
     await broadcast(app_subs, {
         "type": "reply_delta", "stream_id": paragraph_stream_id(stream_id, len(saved)),
@@ -1848,7 +1847,7 @@ async def app_codex_quota(request: Request):
 def split_reply_parts(text: str, meta: dict) -> list:
     """短聊模式(ctx_state.chat_mode=short):回复按空行拆成多条气泡。
     带卡片/语音条/文件的消息不拆;只带图片的照拆(图会脱出气泡单独一张);
-    普通文本按全部非空段落逐条发送。"""
+    普通文本按全部非空段落逐条发送;short_split=sentence 时再按句拆。"""
     state = ctx_state()
     if str(state.get("chat_mode") or "long") != "short":
         return [text]
@@ -1862,6 +1861,8 @@ def split_reply_parts(text: str, meta: dict) -> list:
             or meta.get("album") or (atts and not only_photos)):
         return [text]
     parts = [p.strip() for p in re.split(r"\n{2,}", text or "") if p.strip()]
+    if str(state.get("short_split") or "") == "sentence":
+        parts = [s for p in parts for s in split_sentences(p)]
     if len(parts) < 2:
         parts = [text]
     if bool(state.get("short_strip_terminal_periods")):
@@ -1892,6 +1893,7 @@ async def app_chat_mode(request: Request):
         "ok": True,
         "mode": str(state.get("chat_mode") or "long"),
         "strip_terminal_periods": bool(state.get("short_strip_terminal_periods")),
+        "split": "sentence" if state.get("short_split") == "sentence" else "paragraph",
     }
 
 
@@ -1905,12 +1907,15 @@ async def app_chat_mode_set(request: Request):
         updates["chat_mode"] = "short" if str(body.get("mode") or "") == "short" else "long"
     if "strip_terminal_periods" in body:
         updates["short_strip_terminal_periods"] = bool(body.get("strip_terminal_periods"))
+    if "split" in body:
+        updates["short_split"] = "sentence" if str(body.get("split") or "") == "sentence" else "paragraph"
     if updates:
         state = save_ctx_state(**updates)
     return {
         "ok": True,
         "mode": str(state.get("chat_mode") or "long"),
         "strip_terminal_periods": bool(state.get("short_strip_terminal_periods")),
+        "split": "sentence" if state.get("short_split") == "sentence" else "paragraph",
     }
 
 

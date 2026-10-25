@@ -2285,6 +2285,7 @@ private struct ContextSettingsView: View {
     @State private var pendingCommand: ContextCommand?
     @State private var chatMode: ChatMode = .long
     @State private var stripsShortChatTerminalPeriods = false
+    @State private var shortChatSplit: ShortChatSplit = .paragraph
     @State private var keepaliveStatus: DesktopKeepaliveStatus?
     @State private var keepaliveOn = false
     @State private var isKeepaliveBusy = false
@@ -2395,9 +2396,26 @@ private struct ContextSettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                Text(chatMode == .short
-                     ? "回复会按全部非空段落拆成多条气泡连发。"
-                     : "一整段回复显示为一条气泡。")
+                if chatMode == .short {
+                    Picker("拆分方式", selection: Binding(
+                        get: { shortChatSplit },
+                        set: { split in
+                            shortChatSplit = split
+                            Task { await saveShortChatSplit(split) }
+                        }
+                    )) {
+                        ForEach(ShortChatSplit.allCases) { split in
+                            Text(split.title).tag(split)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(isBusy)
+                }
+                Text(chatMode != .short
+                     ? "一整段回复显示为一条气泡。"
+                     : shortChatSplit == .sentence
+                        ? "回复会一句一条气泡连发；代码块和卡片保持完整。"
+                        : "回复会按全部非空段落拆成多条气泡连发。")
                     .font(.caption)
                     .foregroundStyle(palette.secondaryText)
                 Toggle("去掉短聊段尾句号", isOn: Binding(
@@ -2473,6 +2491,7 @@ private struct ContextSettingsView: View {
             if let settings = try? await model.settingsChatMode() {
                 chatMode = settings.mode
                 stripsShortChatTerminalPeriods = settings.stripTerminalPeriods
+                shortChatSplit = settings.split
             }
             if let nextKeepalive = try? await model.settingsDesktopKeepalive() {
                 applyKeepalive(nextKeepalive)
@@ -2594,9 +2613,24 @@ private struct ContextSettingsView: View {
                 ? "设置已保留，切换到短聊后才生效。"
                 : "只在短聊时生效；问号、感叹号和省略号都会保留。"
         }
+        let unit = shortChatSplit == .sentence ? "每句" : "每段"
         return stripsShortChatTerminalPeriods
-            ? "每段末尾的句号会省略，其他语气标点保持不变。"
-            : "开启后只省略每段末尾的句号。"
+            ? "\(unit)末尾的句号会省略，其他语气标点保持不变。"
+            : "开启后只省略\(unit)末尾的句号。"
+    }
+
+    private func saveShortChatSplit(_ split: ShortChatSplit) async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let settings = try await model.updateShortChatSplit(split, mode: chatMode)
+            chatMode = settings.mode
+            shortChatSplit = settings.split
+            notice = settings.split == .sentence ? "短聊改为一句一条。" : "短聊改为一段一条。"
+        } catch {
+            shortChatSplit = split == .sentence ? .paragraph : .sentence
+            errorText = error.localizedDescription
+        }
     }
 
     private func saveTerminalPeriodStyle(_ enabled: Bool) async {

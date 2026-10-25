@@ -739,12 +739,21 @@ enum ChatMode: String, Codable, CaseIterable, Identifiable {
     var title: String { self == .long ? "长聊" : "短聊" }
 }
 
+/// 短聊怎么拆气泡：按空行分段，或者再细到一句一条。
+enum ShortChatSplit: String, Codable, CaseIterable, Identifiable {
+    case paragraph
+    case sentence
+    var id: String { rawValue }
+    var title: String { self == .paragraph ? "按段" : "按句" }
+}
+
 struct ChatModeResponse: Decodable {
     let mode: ChatMode
     let stripTerminalPeriods: Bool
+    let split: ShortChatSplit
 
     enum CodingKeys: String, CodingKey {
-        case mode
+        case mode, split
         case stripTerminalPeriods = "strip_terminal_periods"
     }
 
@@ -752,6 +761,8 @@ struct ChatModeResponse: Decodable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         mode = try values.decode(ChatMode.self, forKey: .mode)
         stripTerminalPeriods = try values.decodeIfPresent(Bool.self, forKey: .stripTerminalPeriods) ?? false
+        // An older relay doesn't send it; unknown values fall back too.
+        split = (try? values.decodeIfPresent(ShortChatSplit.self, forKey: .split)) ?? .paragraph
     }
 }
 
