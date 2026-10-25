@@ -3626,6 +3626,15 @@ private struct ArticleIndexRow: View {
     let literary: EchoChatFont
     let showsRule: Bool
 
+    /// 第一行预览：去掉 ** 这类记号，换行压成空格。
+    private var preview: String {
+        let plain = (try? AttributedString(
+            markdown: article.text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )).map { String($0.characters) } ?? article.text
+        return plain.split(whereSeparator: \.isNewline).joined(separator: " ")
+    }
+
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             VStack(alignment: .leading, spacing: 5) {
@@ -3634,7 +3643,7 @@ private struct ArticleIndexRow: View {
                     .foregroundStyle(style.ink)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
-                Text(article.text.replacingOccurrences(of: "\n", with: " "))
+                Text(preview)
                     .font(.system(size: 12.5))
                     .foregroundStyle(style.sub)
                     .lineLimit(1)
