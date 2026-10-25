@@ -112,9 +112,11 @@ enum IMessageReviewFixture {
             ?? Bundle.main.url(forResource: "review-wallpaper", withExtension: "jpg", subdirectory: "Review")
         guard let image = url.flatMap({ UIImage(contentsOfFile: $0.path) }) else { return nil }
         guard dark else { return image }
-        return UIGraphicsImageRenderer(size: image.size).image { context in
-            image.draw(at: .zero)
-            UIColor.black.withAlphaComponent(0.62).setFill()
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: image.size, format: format).image { context in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+            UIColor.black.withAlphaComponent(0.45).setFill()
             context.fill(CGRect(origin: .zero, size: image.size))
         }
     }
