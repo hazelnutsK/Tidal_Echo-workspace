@@ -10,7 +10,9 @@ enum IMessageReviewFixture {
         let env = ProcessInfo.processInfo.environment
         writeRegionalFontReview()
         model.theme = EchoTheme(rawValue: env["REVIEW_THEME"] ?? "mist") ?? .mist
-        model.chatLayoutStyle = env["REVIEW_CLASSIC"] == "1" ? .classic : .imessage
+        // Previews show the classic layout she actually uses (2026-10-25); the
+        // iMessage UI tests still ask for theirs with REVIEW_CLASSIC=0.
+        model.chatLayoutStyle = env["REVIEW_CLASSIC"] == "0" ? .imessage : .classic
         model.composerStyle = ComposerStyle(rawValue: env["REVIEW_COMPOSER"] ?? "original") ?? .original
         model.chatFont = EchoChatFont(rawValue: env["REVIEW_FONT"] ?? "system") ?? .system
         model.bubbleStyle = .classic
@@ -27,14 +29,15 @@ enum IMessageReviewFixture {
         model.backgroundImage = wallpaper(dark: model.theme == .harbor)
         var messages: [(MessageAuthor, String)] = [
             (MessageAuthor.human, "看看新的聊天布局"),
-            (.ai, "圆形头像放在正中间，点一下就可以切换窗口。"),
+            (.ai, "顶上左边返回，右边是终端和空间。"),
             (.human, "输入框再轻一点"),
             (.ai, "玻璃只留在底层。文字和图标在上面，清晰可读。"),
             (.human, "加号里有什么？"),
             (.ai, "添加附件和表情包，竖着排好。"),
             (.ai, "空白时是声波，开始打字就会变成发送。")
         ]
-        if model.composerStyle == .wechat {
+        // The regional-font previews need the sample glyphs, whatever the bar.
+        if model.composerStyle == .wechat || env["REVIEW_FONT"] != nil {
             messages = [
                 (.human, "看看新的输入栏"),
                 (.ai, "底部磨砂面板贴着左右和下沿，背景颜色可以透出来。"),

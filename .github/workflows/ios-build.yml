@@ -94,21 +94,27 @@ jobs:
           xcrun simctl status_bar "$REVIEW_DEVICE_ID" override --time '11:48' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
           xcrun simctl install "$REVIEW_DEVICE_ID" 'DerivedData-Simulator/Build/Products/Debug-iphonesimulator/Tidal Echo.app'
           mkdir -p NativePreviews
+          # Chat previews: the classic layout with the original bar and with the Telegram bar.
           for theme in mist harbor; do
-            SIMCTL_CHILD_REVIEW_THEME="$theme" xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --imessage-ui-review
-            sleep 4
-            xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "NativePreviews/$theme.png"
+            for composer in original telegram; do
+              SIMCTL_CHILD_REVIEW_THEME="$theme" SIMCTL_CHILD_REVIEW_COMPOSER="$composer" xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --imessage-ui-review
+              sleep 4
+              xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "NativePreviews/$composer-$theme.png"
+            done
           done
+          SIMCTL_CHILD_REVIEW_THEME=mist SIMCTL_CHILD_REVIEW_COMPOSER=telegram SIMCTL_CHILD_REVIEW_SCENE=features xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --imessage-ui-review
+          sleep 4
+          xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "NativePreviews/features-telegram-mist.png"
           for font in system japanese hongKong; do
-            SIMCTL_CHILD_REVIEW_THEME=mist SIMCTL_CHILD_REVIEW_COMPOSER=wechat SIMCTL_CHILD_REVIEW_FONT="$font" xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --imessage-ui-review
+            SIMCTL_CHILD_REVIEW_THEME=mist SIMCTL_CHILD_REVIEW_COMPOSER=telegram SIMCTL_CHILD_REVIEW_FONT="$font" xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --imessage-ui-review
             sleep 4
-            xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "NativePreviews/wechat-$font.png"
+            xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "NativePreviews/telegram-font-$font.png"
           done
           xcrun simctl terminate "$REVIEW_DEVICE_ID" com.tidalecho.personal
           APP_DATA=$(xcrun simctl get_app_container "$REVIEW_DEVICE_ID" com.tidalecho.personal data)
           cp "$APP_DATA/Documents/regional-font-review.json" NativePreviews/
           for shape in jelly neat; do
-            SIMCTL_CHILD_REVIEW_THEME=mist SIMCTL_CHILD_REVIEW_COMPOSER=wechat SIMCTL_CHILD_REVIEW_FONT=system SIMCTL_CHILD_REVIEW_BUBBLE_SHAPE="$shape" xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --imessage-ui-review
+            SIMCTL_CHILD_REVIEW_THEME=mist SIMCTL_CHILD_REVIEW_COMPOSER=original SIMCTL_CHILD_REVIEW_FONT=system SIMCTL_CHILD_REVIEW_BUBBLE_SHAPE="$shape" xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --imessage-ui-review
             sleep 4
             xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "NativePreviews/bubbles-$shape.png"
           done
@@ -141,7 +147,7 @@ jobs:
           assert "Hiragino" in fonts["japanese"] or "HiraKaku" in fonts["japanese"], fonts
           assert "PingFangHK" in fonts["hongKong"], fonts
           assert fonts["japanese"] != fonts["hongKong"], fonts
-          assert Path("NativePreviews/wechat-japanese.png").read_bytes() != Path("NativePreviews/wechat-hongKong.png").read_bytes(), "Regional previews are identical"
+          assert Path("NativePreviews/telegram-font-japanese.png").read_bytes() != Path("NativePreviews/telegram-font-hongKong.png").read_bytes(), "Regional previews are identical"
           assert Path("NativePreviews/bubbles-jelly.png").read_bytes() != Path("NativePreviews/bubbles-neat.png").read_bytes(), "Bubble previews are identical"
           PY
 
