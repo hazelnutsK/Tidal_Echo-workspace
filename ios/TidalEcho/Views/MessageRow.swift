@@ -245,7 +245,6 @@ struct MessageRow: View {
             bubbleContentRow
         }
         .frame(maxWidth: .infinity)
-        .contextMenu { messageActions }
     }
 
     private var bubbleContentRow: some View {
@@ -261,6 +260,11 @@ struct MessageRow: View {
                 // （她 2026-09-04 定的：图和字合在一个大气泡里太闷。）
                 if !photosOutsideBubble.isEmpty {
                     photoBlock(photosOutsideBubble)
+                        .contentShape(
+                            .contextMenuPreview,
+                            RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
+                        )
+                        .contextMenu { messageActions }
                         .frame(maxWidth: resolvedBubbleMaxWidth, alignment: .leading)
                 }
 
@@ -348,6 +352,11 @@ struct MessageRow: View {
                                 .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
                         }
                     }
+                    // The menu lifts only the bubble itself. Hung on the full-width row,
+                    // iOS first lifted the whole row (timestamp and empty side included)
+                    // as an offset box, then shrank it onto the bubble.
+                    .contentShape(.contextMenuPreview, bubbleShape)
+                    .contextMenu { messageActions }
                     // Constrain wrapping without painting the background across the
                     // whole max-width frame. Short messages keep their intrinsic width.
                     .frame(
