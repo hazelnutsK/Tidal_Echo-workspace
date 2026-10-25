@@ -666,6 +666,62 @@ def book_ref_line(ref: dict) -> str:
     return head + ",下面是她就着这句话说的话]\n"
 
 
+QUOTE_MAX_CHARS = 200
+
+
+def quote_snapshot(message_id) -> dict | None:
+    """引用回复:按 id 把被引用的那条抄一份快照挂进 meta.quote。
+    存快照不存指针——原消息后来被编辑/隐藏,引用条里还是她当时指着的那句。"""
+    try:
+        message_id = int(message_id)
+    except (TypeError, ValueError):
+        return None
+    if message_id <= 0:
+        return None
+    with db() as conn:
+        row = conn.execute(
+            "SELECT id, direction, kind, text, meta FROM messages WHERE id = ?", (message_id,)
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        meta = json.loads(row["meta"] or "{}")
+    except json.JSONDecodeError:
+        meta = {}
+    text = re.sub(r"\s+", " ", str(row["text"] or "")).strip()
+    if not text:
+        attachments = meta.get("attachments") if isinstance(meta.get("attachments"), list) else []
+        mimes = [str(a.get("mime") or "") for a in attachments if isinstance(a, dict)]
+        if any(m.startswith("image/") for m in mimes):
+            text = "[图片]"
+        elif any(m.startswith("audio/") for m in mimes):
+            text = "[语音]"
+        elif mimes:
+            text = "[附件]"
+    if not text:
+        return None
+    if len(text) > QUOTE_MAX_CHARS:
+        text = text[:QUOTE_MAX_CHARS] + "…"
+    return {
+        "id": row["id"],
+        "from": "human" if row["direction"] == "in" else "ai",
+        "text": text,
+    }
+
+
+def quote_line(meta: dict) -> str:
+    """她引用了某句再回复:给 AI 侧垫一行"她在回哪句",跟 book_ref_line 一样只进投递视图。"""
+    quote = (meta or {}).get("quote")
+    if not isinstance(quote, dict):
+        return ""
+    text = str(quote.get("text") or "").strip()
+    if not text:
+        return ""
+    if quote.get("from") == "human":
+        return f"[她引用了她自己之前说的:「{text}」,下面是她接着说的]\n"
+    return f"[她引用了你之前说的:「{text}」,下面是她对这句的回复]\n"
+
+
 # 聊天的别的入口(2026-09-26 接微信)。消息照样落进同一个库、投给同一个身体,
 # 只是 AI 侧投递视图垫一行"她在哪儿说的"——微信那头是她上班摸鱼用的,
 # 我得知道这句是从工位上来的,说话收着点;回复会由 wechat/bridge.mjs 抄送回微信。
@@ -719,6 +775,8 @@ def plugin_payload(msg: dict, recall_prefix: str = "") -> dict:
     ref = meta.get("book_ref")
     if ref and not is_bundle:
         content = book_ref_line(ref) + content
+    if not is_bundle:
+        content = quote_line(meta) + content
     via_line = INBOUND_VIAS.get(meta.get("via") or "")
     if via_line:
         content = via_line + content
@@ -764,7 +822,7 @@ def _forward_to_loop_sync(msg: dict, recall_prefix: str = "") -> None:
     # api_loop 会用 last-id 自己从 relay.db 拼历史：前几条独立气泡已经在历史里，
     # 当前只交最后一条，避免再把整包文本重复一遍。SSE 身体没有这层历史，仍走
     # ai_delivery_text 得到完整合集。
-    text = recall_prefix + INBOUND_VIAS.get(meta.get("via") or "", "") \
+    text = recall_prefix + INBOUND_VIAS.get(meta.get("via") or "", "") + quote_line(meta) \
         + (str(msg.get("text") or "") if is_bundle else ai_delivery_text(msg))
     note_block = xhs_note_block(meta)   # 配图 api_loop 自己会从 meta.attachments 读
     if note_block:
@@ -1007,7 +1065,7 @@ def paragraph_meta(stream_id: str, draft: dict, index: int, *, final: bool = Fal
     if draft.get("sort_after"):
         meta["sort_after"] = draft["sort_after"]
     if index:
-        for key in ("reply_to", "attachments", "album", "peek", "timer", "ask", "xhs", "book_ref"):
+        for key in ("reply_to", "quote", "attachments", "album", "peek", "timer", "ask", "xhs", "book_ref"):
             meta.pop(key, None)
     # One generation has one usage bill, even when it produces many messages.
     if not final:
@@ -1875,6 +1933,11 @@ async def channel_out(request: Request):
         if inherited_session:
             body["api_session"] = inherited_session
             body.setdefault("source", session_body(inherited_session))
+    if kind in ("reply", "reply_delta") and body.get("reply_to") and "quote" not in body:
+        # 我点名回她某一句:跟她引用我一样挂一份快照,气泡下面露出"在回哪句"
+        quote = quote_snapshot(body["reply_to"])
+        if quote:
+            body["quote"] = quote
     if kind in ("thinking_delta", "reply_delta"):
         return await handle_stream_delta(kind, body)
     if kind == "react":
@@ -1914,7 +1977,7 @@ async def channel_out(request: Request):
             # reply_to(引用)只挂第一条。timer/语音已被 split_reply_parts 排除。
             msgs = []
             # 图和各种卡只挂第一条,后面几条是干净的文字气泡
-            carry_once = ("reply_to", "attachments", "album", "peek", "timer", "ask", "xhs")
+            carry_once = ("reply_to", "quote", "attachments", "album", "peek", "timer", "ask", "xhs")
             for i, part in enumerate(parts):
                 pm = dict(meta) if i == 0 else {
                     k: v for k, v in meta.items() if k not in carry_once
@@ -2173,6 +2236,10 @@ async def app_send(request: Request):
     ref = sanitize_book_ref(body.get("book_ref"))
     if ref:
         meta["book_ref"] = ref     # 这条是从书页里说的:两边都看得到,书里按句子聚拢
+    quote = quote_snapshot(body.get("reply_to"))
+    if quote:
+        meta["reply_to"] = quote["id"]
+        meta["quote"] = quote      # 她引用了某句再回:气泡下挂引用条,投递给我时垫一行
     msg = save_message("in", "user", text, meta)
     desire_event("her_message")  # 她来了——attachment 落一口气
     link = xhs.find_link(text)
@@ -2249,6 +2316,7 @@ async def app_send_bundle(request: Request):
         ref = meta.get("book_ref")
         if ref:
             content = book_ref_line(ref) + content
+        content = quote_line(meta) + content
         if content.strip():
             text_parts.append(content)
         attachments = meta.get("attachments")

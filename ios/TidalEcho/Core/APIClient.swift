@@ -48,7 +48,8 @@ struct APIClient {
         attachments: [Attachment],
         sessionID: String? = nil,
         deferReply: Bool = false,
-        bundleID: String? = nil
+        bundleID: String? = nil,
+        replyTo: Int? = nil
     ) async throws -> SendResponse {
         var req = request(url: endpoint("app/send"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -58,7 +59,8 @@ struct APIClient {
                 attachments: attachments,
                 apiSession: sessionID,
                 deferReply: deferReply,
-                bundleID: bundleID
+                bundleID: bundleID,
+                replyTo: replyTo
             )
         )
         let responseData = try await data(for: req)
@@ -644,12 +646,14 @@ private struct SendPayload: Encodable {
     let apiSession: String?
     let deferReply: Bool
     let bundleID: String?
+    let replyTo: Int?
 
     enum CodingKeys: String, CodingKey {
         case text, attachments
         case apiSession = "api_session"
         case deferReply = "defer_reply"
         case bundleID = "bundle_id"
+        case replyTo = "reply_to"
     }
 }
 

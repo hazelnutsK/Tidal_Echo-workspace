@@ -26,6 +26,8 @@ final class AppModel: ObservableObject {
     @Published var activeSessionID = AppModel.legacySessionID
     @Published var isLoadingSessions = false
     @Published var navigationRequest: MessageNavigationRequest?
+    /// 长按「引用」挑中的那条；下一条文字发出去时带走。
+    @Published var replyingTo: ChatMessage?
     @Published var isUploading = false
     @Published var isUploadingVoice = false
     @Published var isSynthesizingMessageID: Int?
@@ -843,6 +845,7 @@ final class AppModel: ObservableObject {
             applySessionsResponse(try await client.updateSession(id: next, active: true), chooseServerActiveWhenNeeded: false)
             activeSessionID = next
             UserDefaults.standard.set(next, forKey: Keys.activeSessionID)
+            replyingTo = nil   // 引用的那句在旧窗口里，别带进新窗口
             resetStreamingDrafts()
             updateTypingState(false)
             await loadHistory(showLoadingState: false)
@@ -968,7 +971,8 @@ final class AppModel: ObservableObject {
         let attachments = pendingAttachments
         guard !text.isEmpty || !attachments.isEmpty else { return }
         pendingAttachments = []
-        _ = await deliverMessage(text: text, attachments: attachments)
+        let quoted = takeReplyingTo()
+        _ = await deliverMessage(text: text, attachments: attachments, quoted: quoted)
     }
 
     func stageBundledMessage(text rawText: String) async {
@@ -986,7 +990,8 @@ final class AppModel: ObservableObject {
             text: text,
             attachments: attachments,
             deferReply: true,
-            bundleID: bundleID
+            bundleID: bundleID,
+            quoted: takeReplyingTo()
         ) else {
             bundledMessageParts.removeAll { $0.id == part.id }
             if bundledMessageParts.isEmpty { replyBundleID = nil }
@@ -1020,12 +1025,52 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func takeReplyingTo() -> MessageQuote? {
+        guard let message = replyingTo else { return nil }
+        replyingTo = nil
+        return Self.quote(of: message)
+    }
+
+    /// 本地先拼一份快照给乐观气泡用；落库后以 relay 抄的为准。
+    static func quote(of message: ChatMessage) -> MessageQuote {
+        var text = message.text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        if text.isEmpty {
+            let mimes = message.meta.attachments.compactMap(\.mime)
+            if mimes.contains(where: { $0.hasPrefix("image/") }) {
+                text = "[图片]"
+            } else if mimes.contains(where: { $0.hasPrefix("audio/") }) {
+                text = "[语音]"
+            } else {
+                text = "[附件]"
+            }
+        }
+        return MessageQuote(id: message.id, author: message.author, text: text)
+    }
+
+    /// 点引用条：已经在眼前就直接滚过去，不在就像搜索那样把它前后的记录要回来。
+    func jumpToQuotedMessage(_ quote: MessageQuote) async {
+        if messages.contains(where: { $0.id == quote.id }) {
+            navigationRequest = MessageNavigationRequest(messageID: quote.id)
+            return
+        }
+        let stub = ChatMessage(
+            id: quote.id,
+            timestamp: "",
+            author: quote.author,
+            kind: quote.author == .human ? "user" : "reply",
+            text: quote.text,
+            meta: MessageMeta(apiSession: activeSessionID == Self.legacySessionID ? nil : activeSessionID)
+        )
+        await jumpToMessage(stub)
+    }
+
     @discardableResult
     private func deliverMessage(
         text: String,
         attachments: [Attachment],
         deferReply: Bool = false,
-        bundleID: String? = nil
+        bundleID: String? = nil,
+        quoted: MessageQuote? = nil
     ) async -> Int? {
         guard let client else { return nil }
 
@@ -1037,6 +1082,7 @@ final class AppModel: ObservableObject {
         )
         optimisticMeta.replyBundleID = bundleID
         optimisticMeta.replyDeferred = deferReply
+        optimisticMeta.quote = quoted
         let optimistic = ChatMessage(
             id: tempID,
             timestamp: ISO8601DateFormatter().string(from: Date()),
@@ -1061,7 +1107,8 @@ final class AppModel: ObservableObject {
                 attachments: attachments,
                 sessionID: activeSessionID == Self.legacySessionID ? nil : activeSessionID,
                 deferReply: deferReply,
-                bundleID: bundleID
+                bundleID: bundleID,
+                replyTo: quoted?.id
             )
             if let realIndex = messages.firstIndex(where: { $0.id == response.id }) {
                 messages[realIndex].delivery = .sent

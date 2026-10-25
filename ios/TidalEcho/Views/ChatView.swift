@@ -559,6 +559,12 @@ struct ChatView: View {
                             onCopy: {
                                 UIPasteboard.general.string = message.text
                             },
+                            onQuote: {
+                                model.replyingTo = message
+                            },
+                            onOpenQuote: { quote in
+                                Task { await model.jumpToQuotedMessage(quote) }
+                            },
                             onEdit: {
                                 editingMessage = message
                             },
@@ -2152,6 +2158,10 @@ private struct ComposerView: View {
                 }
             }
 
+            if let quoted = model.replyingTo {
+                replyingBar(quoted)
+            }
+
             if !model.pendingAttachments.isEmpty || model.isUploading {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -2322,6 +2332,9 @@ private struct ComposerView: View {
         .padding(.bottom, usesTelegramComposer ? (isDraftFocused ? 8 : -5) : (usesWeChatComposer ? 0 : (usesIMessageLayout ? 4 : (isNest ? 5 : 7))))
         .animation(.spring(response: 0.36, dampingFraction: 0.86), value: usesTelegramComposer && isDraftFocused)
         .task { await loadBrain() }
+        .onChange(of: model.replyingTo?.id) { id in
+            if id != nil { isDraftFocused = true }
+        }
         .onDisappear { recorder.cancel() }
         .onChange(of: photoItems) { items in
             guard !items.isEmpty else { return }
@@ -2382,6 +2395,48 @@ private struct ComposerView: View {
     }
 
     private var usesIMessageLayout: Bool { model.chatLayoutStyle == .imessage }
+
+    /// 输入框上方那条「回复 Altair：…」，叉掉就不引用了。
+    private func replyingBar(_ message: ChatMessage) -> some View {
+        let quote = AppModel.quote(of: message)
+        return HStack(spacing: 9) {
+            Capsule()
+                .fill(palette.accent)
+                .frame(width: 3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(quote.author == .ai ? "回复 \(model.peerDisplayName)" : "回复自己")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.accent)
+                Text(quote.text)
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.secondaryText)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                withAnimation(.easeOut(duration: 0.16)) { model.replyingTo = nil }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 17))
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("取消引用")
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.leading, usesTelegramComposer ? 14 : 4)
+        .padding(.trailing, usesTelegramComposer ? 4 : 0)
+        .padding(.vertical, usesTelegramComposer ? 6 : 0)
+        .background {
+            // Like the recording strip: the Telegram bar has no dock to sit in.
+            if usesTelegramComposer {
+                Color.clear.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+        }
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
 
     private var usesWeChatComposer: Bool { model.composerStyle == .wechat }
     private var usesTelegramComposer: Bool { model.composerStyle == .telegram }

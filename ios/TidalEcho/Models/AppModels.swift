@@ -282,6 +282,18 @@ struct MessageAlbumEntry: Decodable, Hashable, Identifiable {
     }
 }
 
+/// 引用回复：被引用那条的快照（relay 落库时抄的，原消息后来改了也不变）。
+struct MessageQuote: Codable, Hashable {
+    let id: Int
+    let author: MessageAuthor
+    let text: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, text
+        case author = "from"
+    }
+}
+
 struct MessageMeta: Decodable, Hashable {
     var attachments: [Attachment]
     var reactions: [String: String]
@@ -310,6 +322,8 @@ struct MessageMeta: Decodable, Hashable {
     var replyBundleID: String?
     /// true 表示这条已发到聊天页，但还没有放行给 AI。
     var replyDeferred: Bool
+    /// 这条是引用了哪句再回的。
+    var quote: MessageQuote?
 
     enum CodingKeys: String, CodingKey {
         case attachments, api
@@ -322,7 +336,7 @@ struct MessageMeta: Decodable, Hashable {
         case callStatus = "call_status"
         case replyBundleID = "reply_bundle_id"
         case replyDeferred = "reply_deferred"
-        case starred, timer, ask, peek, edited, glyph, steps, act, album, recalled, translations, xhs
+        case starred, timer, ask, peek, edited, glyph, steps, act, album, recalled, translations, xhs, quote
     }
 
     init(
@@ -355,6 +369,7 @@ struct MessageMeta: Decodable, Hashable {
         self.xhs = nil
         self.replyBundleID = nil
         self.replyDeferred = false
+        self.quote = nil
     }
 
     /// meta 是个松散口袋，relay 侧偶尔会往同名键塞别的形状（2026-08-21：hidden 的
@@ -395,6 +410,7 @@ struct MessageMeta: Decodable, Hashable {
         xhs = Self.lenient(XHSCard.self, values, .xhs)
         replyBundleID = Self.lenient(String.self, values, .replyBundleID)
         replyDeferred = Self.lenient(Bool.self, values, .replyDeferred) ?? false
+        quote = Self.lenient(MessageQuote.self, values, .quote)
         let nestedAct = Self.lenient(ActMeta.self, values, .act)
         glyph = Self.lenient(String.self, values, .glyph) ?? nestedAct?.glyph
         steps = Self.lenient([ToolStep].self, values, .steps) ?? nestedAct?.steps ?? []

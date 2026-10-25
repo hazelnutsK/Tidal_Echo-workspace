@@ -127,6 +127,8 @@ struct MessageRow: View {
     let onToggleStar: () -> Void
     let onSpeak: () -> Void
     let onCopy: () -> Void
+    let onQuote: () -> Void
+    let onOpenQuote: (MessageQuote) -> Void
     let onEdit: () -> Void
     let onRegenerate: () -> Void
     let onHide: () -> Void
@@ -354,6 +356,10 @@ struct MessageRow: View {
                             : resolvedBubbleMaxWidth,
                         alignment: message.author == .human ? .trailing : .leading
                     )
+                }
+
+                if let quote = message.meta.quote {
+                    quoteStrip(quote)
                 }
 
                 if let reaction = displayedReaction, !reaction.isEmpty {
@@ -694,6 +700,24 @@ struct MessageRow: View {
         }
     }
 
+    /// 微信那样贴在气泡下面的一条灰色引用，点一下滚回原话。
+    private func quoteStrip(_ quote: MessageQuote) -> some View {
+        Button { onOpenQuote(quote) } label: {
+            Text("\(quote.author == .ai ? peerName : "我")：\(quote.text)")
+                .font(.system(size: CGFloat(12.5 * fontScale)))
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(palette.composer.opacity(0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: resolvedBubbleMaxWidth, alignment: message.author == .human ? .trailing : .leading)
+        .accessibilityLabel("引用了\(quote.author == .ai ? peerName : "我")：\(quote.text)")
+        .accessibilityHint("跳到原消息")
+    }
+
     @ViewBuilder
     private var messageActions: some View {
         if let onBeginSelection {
@@ -701,6 +725,9 @@ struct MessageRow: View {
         }
         if !message.text.isEmpty {
             Button(action: onCopy) { Label("复制", systemImage: "doc.on.doc") }
+        }
+        if message.id > 0 && ["user", "voice", "reply"].contains(message.kind) {
+            Button(action: onQuote) { Label("引用", systemImage: "quote.bubble") }
         }
         if message.id > 0 {
             if message.author == .ai {
