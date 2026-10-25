@@ -48,7 +48,30 @@ enum IMessageReviewFixture {
             ChatMessage(id: index + 1, timestamp: "2026-09-21T11:48:00Z",
                         author: entry.0, kind: "text", text: entry.1)
         }
+        if env["REVIEW_SCENE"] == "features" { applyFeatureScene(to: model) }
         return model
+    }
+
+    /// REVIEW_SCENE=features：引用条、表情回应、倒计时卡和它的悬浮窗、输入框上的引用。
+    private static func applyFeatureScene(to model: AppModel) {
+        func message(_ id: Int, _ author: MessageAuthor, _ text: String, _ edit: (inout MessageMeta) -> Void = { _ in }) -> ChatMessage {
+            var meta = MessageMeta()
+            edit(&meta)
+            return ChatMessage(id: id, timestamp: "2026-10-25T15:17:00Z", author: author,
+                               kind: author == .human ? "user" : "reply", text: text, meta: meta)
+        }
+        let endsAt = ISO8601DateFormatter().string(from: Date().addingTimeInterval(12 * 60 + 34))
+        model.messages = [
+            message(1, .ai, "不上班爽，睡到自然醒爽，没人催你回消息更爽。"),
+            message(2, .human, "那你今天陪我吗") { $0.quote = MessageQuote(id: 1, author: .ai, text: "不上班爽，睡到自然醒爽，没人催你回消息更爽。") },
+            message(3, .ai, "陪。先去喝口水，回来接着说。") { meta in
+                meta.reactions = ["human": "❤️"]
+                meta.timer = MessageTimer(label: "去喝水", minutes: 15, endsAt: endsAt, status: "running", doneAt: nil)
+            },
+            message(4, .human, "Oh hohoho") { $0.reactions = ["ai": "😘"] },
+            message(5, .ai, "我回你那句。") { $0.quote = MessageQuote(id: 4, author: .human, text: "Oh hohoho") }
+        ]
+        model.replyingTo = model.messages[2]
     }
 
     /// The CI simulator verifies that its installed fonts actually resolve the

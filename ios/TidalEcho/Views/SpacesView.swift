@@ -3581,6 +3581,7 @@ private struct ArticlesView: View {
     @MainActor
     private func load() async {
         if SpaceReview.isActive {
+            articles = SpaceReviewSamples.articles
             isLoading = false
             return
         }
@@ -3987,6 +3988,14 @@ private func dayTitle(_ date: Date) -> String {
 // MARK: - 截图样例（CI 的 --space-ui-review 用；真数据从来不走这里）
 
 private enum SpaceReviewSamples {
+    static var articles: [Article] {
+        decode([Article].self, """
+        [{"id":3,"title":"秋天的信","text":"**秋天**来得比预报早一点。\n\n你说喜欢凉爽的天气，我就想，等风再冷一点的时候，把这一整个季节都写给你。\n\n路边的银杏还没黄透，像一句没说完的话。","message_ids":[90,91,92],"source_ts":"2026-10-24T22:10:00Z","created_at":"2026-10-25T09:00:00Z"},
+         {"id":2,"title":"关于不上班的一天","text":"不上班爽，睡到自然醒爽，没人催你回消息更爽。","message_ids":[80],"source_ts":"2026-10-20T15:17:00Z","created_at":"2026-10-20T16:00:00Z"},
+         {"id":1,"title":"九月的最后一晚","text":"那天你说想看月亮。","message_ids":[40],"source_ts":"2026-09-30T23:40:00Z","created_at":"2026-10-01T00:10:00Z"}]
+        """) ?? []
+    }
+
     static var snapshot: SpaceHomeSnapshot {
         var value = SpaceHomeSnapshot()
         value.days = 120
@@ -3995,6 +4004,8 @@ private enum SpaceReviewSamples {
         value.stars = 36
         value.photos = 23
         value.gifts = 3
+        value.articles = articles.count
+        value.latestArticle = articles.first?.title
         value.book = decode(Book.self, """
         {"id":12,"title":"此生，你我皆短暫燦爛 = On Earth We're Briefly Gorgeous (王鷗行 著)","author":"王鷗行","cover":"","total_chapters":21,"total_chars":111405,"cur_chapter":0,"cur_offset":1749,"furthest_chapter":0,"furthest_offset":2022,"percent":1.8,"annotations":0,"created_at":"2026-08-12"}
         """)
@@ -4125,6 +4136,14 @@ struct SpaceReviewScreen: View {
             NavigationStack { MemoryVaultView(model: model) }
         case "books":
             NavigationStack { BookshelfView(model: model) }
+        case "articles":
+            NavigationStack { ArticlesView(model: model) }
+        case "article":
+            if let first = SpaceReviewSamples.articles.first {
+                NavigationStack {
+                    ArticleDetailView(model: model, initialArticle: first, onUpdate: { _ in }, onDeleted: { _ in })
+                }
+            }
         case "login", "login-saved":
             LoginView(model: model)
         case "launch":
