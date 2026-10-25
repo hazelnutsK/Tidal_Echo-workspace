@@ -410,6 +410,29 @@ struct APIClient {
         return try decoder.decode(StarResponse.self, from: try await data(for: req)).starred
     }
 
+    func articles() async throws -> [Article] {
+        let responseData = try await data(for: request(url: endpoint("app/articles")))
+        return try decoder.decode(ArticlesResponse.self, from: responseData).articles
+    }
+
+    func createArticle(messageIDs: [Int]) async throws -> ArticleResponse {
+        var req = request(url: endpoint("app/articles"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(["message_ids": messageIDs])
+        return try decoder.decode(ArticleResponse.self, from: try await data(for: req))
+    }
+
+    func renameArticle(id: Int, title: String) async throws -> Article {
+        var req = request(url: endpoint("app/articles/\(id)"), method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(["title": title])
+        return try decoder.decode(ArticleResponse.self, from: try await data(for: req)).article
+    }
+
+    func deleteArticle(id: Int) async throws {
+        _ = try await data(for: request(url: endpoint("app/articles/\(id)"), method: "DELETE"))
+    }
+
     func album() async throws -> [AlbumPhoto] {
         let responseData = try await data(for: request(url: endpoint("app/album")))
         return try decoder.decode(AlbumResponse.self, from: responseData).photos

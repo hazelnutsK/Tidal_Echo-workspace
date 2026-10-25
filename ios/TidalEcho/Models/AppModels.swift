@@ -945,6 +945,30 @@ struct APIUsageStats: Decodable {
 
 struct StarsResponse: Decodable { let stars: [ChatMessage] }
 
+/// 空间页「文章」：她收起来的一整篇长回复（短聊拆开的几条已拼回一篇）。
+struct Article: Decodable, Hashable, Identifiable {
+    let id: Int
+    var title: String
+    let text: String
+    let messageIDs: [Int]
+    let sourceTimestamp: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, text
+        case messageIDs = "message_ids"
+        case sourceTimestamp = "source_ts"
+        case createdAt = "created_at"
+    }
+}
+
+struct ArticlesResponse: Decodable { let articles: [Article] }
+
+struct ArticleResponse: Decodable {
+    let article: Article
+    let existing: Bool?
+}
+
 struct StarResponse: Decodable {
     let starred: String?
 }

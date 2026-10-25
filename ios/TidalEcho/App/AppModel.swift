@@ -1171,6 +1171,14 @@ final class AppModel: ObservableObject {
 
     func spaceStars() async throws -> [ChatMessage] { try await requireClient().stars() }
     func spaceAlbum() async throws -> [AlbumPhoto] { try await requireClient().album() }
+    func spaceArticles() async throws -> [Article] { try await requireClient().articles() }
+    func saveArticle(messageIDs: [Int]) async throws -> ArticleResponse {
+        try await requireClient().createArticle(messageIDs: messageIDs)
+    }
+    func renameArticle(id: Int, title: String) async throws -> Article {
+        try await requireClient().renameArticle(id: id, title: title)
+    }
+    func deleteArticle(id: Int) async throws { try await requireClient().deleteArticle(id: id) }
     func spaceGiftPages() async throws -> [GiftPage] { try await requireClient().giftPages() }
     func giftPageURL(file: String) -> URL? { client?.giftPageURL(file: file) }
 

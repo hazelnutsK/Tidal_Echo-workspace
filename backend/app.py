@@ -310,6 +310,20 @@ def init_db() -> None:
             )
             """
         )
+        # 文章(2026-10-25):她把我写的长东西收进空间页单独一页。跟收藏分开——
+        # 收藏是一句话,文章是一整篇;短聊拆成几条的回复收的时候拼回一篇。
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS articles (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                title       TEXT NOT NULL,
+                text        TEXT NOT NULL,
+                message_ids TEXT NOT NULL,              -- JSON 数组,原消息 id
+                source_ts   TEXT NOT NULL,              -- 第一条原消息的时间
+                created_at  TEXT NOT NULL
+            )
+            """
+        )
         conn.commit()
 
 
@@ -7515,6 +7529,104 @@ async def app_stars(request: Request, limit: int = 200):
             (limit,),
         ).fetchall()
     return {"stars": [app_payload(m) for m in rows_to_messages(rows)]}
+
+
+ARTICLE_TITLE_MAX = 30
+
+
+def article_payload(row) -> dict:
+    return {
+        "id": row["id"], "title": row["title"], "text": row["text"],
+        "message_ids": json.loads(row["message_ids"] or "[]"),
+        "source_ts": row["source_ts"], "created_at": row["created_at"],
+    }
+
+
+def article_default_title(text: str) -> str:
+    for line in text.splitlines():
+        line = line.strip().lstrip("#").strip().strip("*").strip()
+        if line:
+            return line[:ARTICLE_TITLE_MAX] + ("…" if len(line) > ARTICLE_TITLE_MAX else "")
+    return "无题"
+
+
+def article_source_messages(conn, message_ids: list[int]) -> list[dict]:
+    """收一条短聊气泡 = 收它所在的整条回复(同一个 stream_parent 的几段拼回去)。"""
+    placeholders = ",".join("?" for _ in message_ids)
+    rows = rows_to_messages(conn.execute(
+        f"SELECT * FROM messages WHERE id IN ({placeholders}) ORDER BY id", tuple(message_ids)
+    ).fetchall())
+    if len(rows) == 1:
+        parent = (rows[0]["meta"] or {}).get("stream_parent")
+        if parent:
+            rows = rows_to_messages(conn.execute(
+                "SELECT * FROM messages WHERE json_extract(meta,'$.stream_parent') = ? "
+                "AND kind = 'reply' ORDER BY id", (parent,)
+            ).fetchall()) or rows
+    return [m for m in rows if str(m.get("text") or "").strip()]
+
+
+@app.get("/app/articles")
+async def app_articles(request: Request):
+    check_auth(request)
+    with db() as conn:
+        rows = conn.execute("SELECT * FROM articles ORDER BY id DESC").fetchall()
+    return {"articles": [article_payload(r) for r in rows]}
+
+
+@app.post("/app/articles")
+async def app_article_create(request: Request):
+    check_auth(request)
+    body = await request.json()
+    raw_ids = body.get("message_ids")
+    if not isinstance(raw_ids, list) or not raw_ids or len(raw_ids) > 100:
+        raise HTTPException(status_code=400, detail="message_ids required")
+    try:
+        message_ids = sorted({int(v) for v in raw_ids})
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="invalid message_ids")
+    with db() as conn:
+        sources = article_source_messages(conn, message_ids)
+        if not sources:
+            raise HTTPException(status_code=404, detail="没有能收的文字")
+        ids_json = json.dumps([m["id"] for m in sources])
+        existing = conn.execute("SELECT * FROM articles WHERE message_ids = ?", (ids_json,)).fetchone()
+        if existing:
+            return {"article": article_payload(existing), "existing": True}
+        text = "\n\n".join(str(m["text"]).strip() for m in sources)
+        title = str(body.get("title") or "").strip()[:ARTICLE_TITLE_MAX] or article_default_title(text)
+        cur = conn.execute(
+            "INSERT INTO articles (title, text, message_ids, source_ts, created_at) VALUES (?,?,?,?,?)",
+            (title, text, ids_json, sources[0]["ts"], now_iso()),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM articles WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return {"article": article_payload(row), "existing": False}
+
+
+@app.patch("/app/articles/{article_id}")
+async def app_article_rename(article_id: int, request: Request):
+    check_auth(request)
+    body = await request.json()
+    title = str(body.get("title") or "").strip()[:ARTICLE_TITLE_MAX]
+    if not title:
+        raise HTTPException(status_code=400, detail="title required")
+    with db() as conn:
+        cur = conn.execute("UPDATE articles SET title = ? WHERE id = ?", (title, article_id))
+        conn.commit()
+        if not cur.rowcount:
+            raise HTTPException(status_code=404, detail="article not found")
+        row = conn.execute("SELECT * FROM articles WHERE id = ?", (article_id,)).fetchone()
+    return {"article": article_payload(row)}
+
+
+@app.delete("/app/articles/{article_id}")
+async def app_article_delete(article_id: int, request: Request):
+    check_auth(request)
+    with db() as conn:
+        conn.execute("DELETE FROM articles WHERE id = ?", (article_id,))
+        conn.commit()
+    return {"ok": True}
 
 
 # ---- 开屏欢迎语：backend/greetings.json,小克手写按时段分档。每次现读,编辑即生效 ----

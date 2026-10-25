@@ -128,6 +128,7 @@ struct MessageRow: View {
     let onSpeak: () -> Void
     let onCopy: () -> Void
     let onQuote: () -> Void
+    let onSaveArticle: () -> Void
     let onOpenQuote: (MessageQuote) -> Void
     let onEdit: () -> Void
     let onRegenerate: () -> Void
@@ -737,6 +738,10 @@ struct MessageRow: View {
         }
         if message.id > 0 && message.author == .human && (message.kind == "user" || message.kind == "voice") {
             Button(action: onEdit) { Label("编辑", systemImage: "pencil") }
+        }
+        if message.id > 0 && message.author == .ai && message.kind == "reply"
+            && !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Button(action: onSaveArticle) { Label("收进文章", systemImage: "doc.text") }
         }
         if message.id > 0 && message.author == .ai && message.kind == "reply" {
             Button(action: onRegenerate) { Label("重新生成", systemImage: "arrow.clockwise") }

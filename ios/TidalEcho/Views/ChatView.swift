@@ -25,6 +25,8 @@ struct ChatView: View {
     @State private var editingMessage: ChatMessage?
     /// 她把哪张倒计时的悬浮窗收起了（只收这一张，下一张照常浮出来）。
     @State private var dismissedTimerMessageID: Int?
+    /// 收进文章后顶上飘一下的小提示。
+    @State private var articleToast: String?
     @State private var pendingRegeneration: ChatMessage?
     @State private var pendingHide: ChatMessage?
     /// nil＝没在多选；否则是选中的消息 id。
@@ -172,6 +174,7 @@ struct ChatView: View {
                                         isWorking: isWorkingOnSelection,
                                         palette: palette,
                                         onStar: starSelection,
+                                        onSaveArticle: saveSelectionAsArticle,
                                         onShare: shareSelection,
                                         onCancel: {
                                             withAnimation(.easeOut(duration: 0.18)) { selectedMessageIDs = nil }
@@ -189,6 +192,20 @@ struct ChatView: View {
                 ClawdPetOverlay(model: model, bottomInset: composerHeight + 4)
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
                     .zIndex(10)
+            }
+
+            if let articleToast {
+                Text(articleToast)
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(palette.text)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .glassEffect(.regular, in: Capsule())
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 70)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .allowsHitTesting(false)
+                    .zIndex(11)
             }
 
             if let timerMessage = activeTimerMessage, let timer = timerMessage.meta.timer {
@@ -598,6 +615,9 @@ struct ChatView: View {
                             onQuote: {
                                 model.replyingTo = message
                             },
+                            onSaveArticle: {
+                                Task { await saveArticle(messageIDs: [message.id]) }
+                            },
                             onOpenQuote: { quote in
                                 Task { await model.jumpToQuotedMessage(quote) }
                             },
@@ -964,6 +984,42 @@ struct ChatView: View {
                 }
             }
             withAnimation(.easeOut(duration: 0.18)) { selectedMessageIDs = nil }
+        }
+    }
+
+    private func saveSelectionAsArticle() {
+        let ids = selectedMessages.map(\.id).filter { $0 > 0 }
+        guard !ids.isEmpty, !isWorkingOnSelection else { return }
+        isWorkingOnSelection = true
+        Task {
+            defer { isWorkingOnSelection = false }
+            if await saveArticle(messageIDs: ids) {
+                withAnimation(.easeOut(duration: 0.18)) { selectedMessageIDs = nil }
+            }
+        }
+    }
+
+    /// 一条短聊气泡会带上它所在的整条回复；多选的就按选中的拼。
+    @discardableResult
+    private func saveArticle(messageIDs: [Int]) async -> Bool {
+        do {
+            let saved = try await model.saveArticle(messageIDs: messageIDs)
+            showArticleToast(saved.existing == true
+                ? "《\(saved.article.title)》已经在文章里了"
+                : "收进文章：《\(saved.article.title)》")
+            return true
+        } catch {
+            model.errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    private func showArticleToast(_ text: String) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { articleToast = text }
+        Task {
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            guard articleToast == text else { return }
+            withAnimation(.easeIn(duration: 0.2)) { articleToast = nil }
         }
     }
 

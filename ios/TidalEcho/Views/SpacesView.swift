@@ -128,6 +128,10 @@ struct SpacesView: View {
                 .buttonStyle(SpacePressStyle())
                 .spaceEntrance(3)
 
+            NavigationLink { ArticlesView(model: model) } label: { articleTile }
+                .buttonStyle(SpacePressStyle())
+                .spaceEntrance(4)
+
             HStack(alignment: .top, spacing: 10) {
                 NavigationLink { StarsView(model: model) } label: {
                     countTile("收藏", snapshot.stars, dot: false)
@@ -141,7 +145,7 @@ struct SpacesView: View {
             }
             .buttonStyle(SpacePressStyle())
             .fixedSize(horizontal: false, vertical: true)
-            .spaceEntrance(4)
+            .spaceEntrance(5)
         }
     }
 
@@ -222,6 +226,27 @@ struct SpacesView: View {
                 .frame(height: 2)
             }
             Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .spaceGlass(style, radius: 20)
+    }
+
+    private var articleTile: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 7) {
+                SpaceLabel(text: "文章", style: style)
+                Text(snapshot.latestArticle ?? "他写给你的长信，收在这里。")
+                    .font(literary.font(size: 15))
+                    .foregroundStyle(style.ink)
+                    .lineLimit(1)
+                    .spaceReveal(snapshot.latestArticle, delay: 0.14)
+            }
+            Spacer(minLength: 4)
+            Text(snapshot.articles.map { "\($0)" } ?? "—")
+                .font(SpaceFont.display(26))
+                .foregroundStyle(style.sub)
+                .contentTransition(.numericText())
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -317,6 +342,7 @@ struct SpacesView: View {
         async let starsResult = try? model.spaceStars()
         async let albumResult = try? model.spaceAlbum()
         async let giftsResult = try? model.spaceGiftPages()
+        async let articlesResult = try? model.spaceArticles()
         async let nextDayResult = loadNextDay()
 
         if let anniversary = (await anniversaryResult) ?? nil {
@@ -333,6 +359,10 @@ struct SpacesView: View {
         if let stars = await starsResult { next.stars = stars.count }
         if let album = await albumResult { next.photos = album.count }
         if let gifts = await giftsResult { next.gifts = gifts.count }
+        if let articles = await articlesResult {
+            next.articles = articles.count
+            next.latestArticle = articles.first?.title
+        }
         next.nextDay = await nextDayResult
         return next
     }
@@ -445,6 +475,8 @@ private struct SpaceHomeSnapshot {
     var stars: Int?
     var photos: Int?
     var gifts: Int?
+    var articles: Int?
+    var latestArticle: String?
 
     /// relay 没回来之前先按 5·27 算（和服务端一样：当天是第 0 天）。
     static func fallbackDays() -> Int {
@@ -3415,6 +3447,342 @@ private struct CalendarComposer: View {
 }
 
 // MARK: - Shared helpers
+
+// MARK: 文章
+
+private enum ArticleRow: Identifiable {
+    case header(SpaceMonth)
+    case article(Article, SpaceMonth, first: Bool)
+
+    var id: String {
+        switch self {
+        case .header(let month): return month.headerID
+        case .article(let article, let month, _): return month.rowID("\(article.id)")
+        }
+    }
+}
+
+/// 她从聊天里收起来的长回复，一篇一页。跟收藏分开：收藏是一句，这里是整篇。
+private struct ArticlesView: View {
+    @ObservedObject var model: AppModel
+    @State private var articles: [Article] = []
+    @State private var isLoading = true
+    @State private var errorText: String?
+    @State private var renameTarget: Article?
+    @State private var isRenaming = false
+    @State private var renameText = ""
+
+    private var style: SpaceStyle { SpaceStyle(theme: model.theme) }
+    private var literary: EchoChatFont { model.journalLiteraryFont }
+
+    private var rows: [ArticleRow] {
+        var result: [ArticleRow] = []
+        var current: SpaceMonth?
+        for article in articles {
+            let month = SpaceMonth(date: serverDate(from: article.sourceTimestamp) ?? Date())
+            let first = month != current
+            if first {
+                current = month
+                result.append(.header(month))
+            }
+            result.append(.article(article, month, first: first))
+        }
+        return result
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("文章")
+                        .font(.system(size: 30, weight: .semibold))
+                    Spacer()
+                    if !articles.isEmpty {
+                        Text("\(articles.count) 篇")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(style.sub)
+                    }
+                }
+                .padding(.top, 4)
+                .spaceEntrance(0)
+
+                if isLoading && articles.isEmpty {
+                    ProgressView("正在翻文章…")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 60)
+                } else if articles.isEmpty {
+                    SpaceEmptyState(icon: "doc.text", title: "还没有文章", text: "回到聊天页，长按他写的长段落，选「收进文章」。", style: style)
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(rows) { row in
+                            switch row {
+                            case .header(let month):
+                                SpaceMonthHeader(month: month, style: style, showsYear: month.year != SpaceMonth(date: Date()).year)
+                                    .padding(.top, 14)
+                                    .padding(.bottom, 2)
+                            case .article(let article, _, let first):
+                                NavigationLink {
+                                    ArticleDetailView(
+                                        model: model,
+                                        initialArticle: article,
+                                        onUpdate: { updated in
+                                            if let index = articles.firstIndex(where: { $0.id == updated.id }) {
+                                                articles[index] = updated
+                                            }
+                                        },
+                                        onDeleted: { id in articles.removeAll { $0.id == id } }
+                                    )
+                                } label: {
+                                    ArticleIndexRow(article: article, style: style, literary: literary, showsRule: !first)
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button {
+                                        renameText = article.title
+                                        renameTarget = article
+                                        isRenaming = true
+                                    } label: {
+                                        Label("改标题", systemImage: "pencil")
+                                    }
+                                    Button(role: .destructive) {
+                                        Task { await delete(article) }
+                                    } label: {
+                                        Label("删除", systemImage: "trash")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 36)
+        }
+        .spacePage(style)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { JournalFontMenu(model: model) }
+        }
+        .refreshable { await load() }
+        .task { await load() }
+        .alert("改标题", isPresented: $isRenaming) {
+            TextField("标题", text: $renameText)
+            Button("取消", role: .cancel) {}
+            Button("好") {
+                guard let target = renameTarget else { return }
+                Task { await rename(target, to: renameText) }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let errorText { SpaceErrorBanner(text: errorText) }
+        }
+    }
+
+    @MainActor
+    private func load() async {
+        if SpaceReview.isActive {
+            isLoading = false
+            return
+        }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            articles = try await model.spaceArticles()
+            errorText = nil
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func rename(_ article: Article, to title: String) async {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != article.title else { return }
+        do {
+            let updated = try await model.renameArticle(id: article.id, title: trimmed)
+            if let index = articles.firstIndex(where: { $0.id == updated.id }) { articles[index] = updated }
+            errorText = nil
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func delete(_ article: Article) async {
+        do {
+            try await model.deleteArticle(id: article.id)
+            withAnimation { articles.removeAll { $0.id == article.id } }
+            errorText = nil
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+}
+
+private struct ArticleIndexRow: View {
+    let article: Article
+    let style: SpaceStyle
+    let literary: EchoChatFont
+    let showsRule: Bool
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(article.title)
+                    .font(literary.font(size: 16))
+                    .foregroundStyle(style.ink)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                Text(article.text.replacingOccurrences(of: "\n", with: " "))
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(style.sub)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(momentDayNumber(article.sourceTimestamp))
+                .font(SpaceFont.display(15))
+                .foregroundStyle(style.sub)
+        }
+        .padding(.vertical, 13)
+        .overlay(alignment: .top) {
+            if showsRule { SpaceHairline(style: style) }
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+private struct ArticleDetailView: View {
+    @ObservedObject var model: AppModel
+    @State private var article: Article
+    let onUpdate: (Article) -> Void
+    let onDeleted: (Int) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var errorText: String?
+    @State private var isRenaming = false
+    @State private var renameText = ""
+    @State private var confirmsDelete = false
+
+    init(
+        model: AppModel,
+        initialArticle: Article,
+        onUpdate: @escaping (Article) -> Void,
+        onDeleted: @escaping (Int) -> Void
+    ) {
+        self.model = model
+        _article = State(initialValue: initialArticle)
+        self.onUpdate = onUpdate
+        self.onDeleted = onDeleted
+    }
+
+    private var style: SpaceStyle { SpaceStyle(theme: model.theme) }
+    private var literary: EchoChatFont { model.journalLiteraryFont }
+
+    /// 行内 **粗体**、*斜体* 照常显示，别把星号原样印出来；换行原样保留。
+    private var bodyText: AttributedString {
+        (try? AttributedString(
+            markdown: article.text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(article.text)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(spacing: 10) {
+                    SpaceAvatar(image: model.aiAvatarImage, letter: "A", style: style, size: 30)
+                    Text(momentAuthorName(.ai))
+                        .font(.system(size: 13.5, weight: .semibold))
+                    Text(shortTimestamp(article.sourceTimestamp))
+                        .font(.system(size: 12))
+                        .foregroundStyle(style.sub)
+                    Spacer()
+                }
+                .spaceEntrance(0)
+
+                Text(article.title)
+                    .font(literary.font(size: 26, weight: .semibold))
+                    .lineSpacing(5)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .spaceEntrance(1)
+
+                Text(bodyText)
+                    .font(literary.font(size: 16.5))
+                    .lineSpacing(11)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .spaceEntrance(2)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
+            .padding(.bottom, 40)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .spacePage(style)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { JournalFontMenu(model: model) }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        renameText = article.title
+                        isRenaming = true
+                    } label: {
+                        Label("改标题", systemImage: "pencil")
+                    }
+                    Button {
+                        UIPasteboard.general.string = article.text
+                    } label: {
+                        Label("复制全文", systemImage: "doc.on.doc")
+                    }
+                    Button(role: .destructive) {
+                        confirmsDelete = true
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+            }
+        }
+        .alert("改标题", isPresented: $isRenaming) {
+            TextField("标题", text: $renameText)
+            Button("取消", role: .cancel) {}
+            Button("好") { Task { await rename() } }
+        }
+        .confirmationDialog("删掉这篇？聊天里的原话不受影响。", isPresented: $confirmsDelete, titleVisibility: .visible) {
+            Button("删除", role: .destructive) { Task { await delete() } }
+            Button("取消", role: .cancel) {}
+        }
+        .overlay(alignment: .bottom) {
+            if let errorText { SpaceErrorBanner(text: errorText) }
+        }
+    }
+
+    @MainActor
+    private func rename() async {
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != article.title else { return }
+        do {
+            article = try await model.renameArticle(id: article.id, title: trimmed)
+            onUpdate(article)
+            errorText = nil
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func delete() async {
+        do {
+            try await model.deleteArticle(id: article.id)
+            onDeleted(article.id)
+            dismiss()
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+}
 
 private struct SpaceEmptyState: View {
     let icon: String

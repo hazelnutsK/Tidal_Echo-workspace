@@ -9,6 +9,7 @@ struct MessageSelectionBar: View {
     let isWorking: Bool
     let palette: EchoPalette
     let onStar: () -> Void
+    let onSaveArticle: () -> Void
     let onShare: () -> Void
     let onCancel: () -> Void
 
@@ -32,6 +33,12 @@ struct MessageSelectionBar: View {
 
             Button(action: onStar) {
                 Label(allStarred ? "取消收藏" : "收藏", systemImage: allStarred ? "star.slash" : "star")
+            }
+            .frame(minHeight: 44)
+            .disabled(count == 0 || isWorking)
+
+            Button(action: onSaveArticle) {
+                Label("文章", systemImage: "doc.text")
             }
             .frame(minHeight: 44)
             .disabled(count == 0 || isWorking)
