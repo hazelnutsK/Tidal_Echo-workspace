@@ -2207,9 +2207,15 @@ private struct ComposerView: View {
             if recorder.isRecording || recorder.hasRecording {
                 HStack(spacing: 11) {
                     Button { recorder.cancel() } label: {
+                        // A bare 13pt glyph was a fingertip-sized miss on the phone.
                         Image(systemName: "xmark").font(.system(size: 13, weight: .bold))
+                            .frame(width: 36, height: 36)
+                            .contentShape(Circle())
                     }
+                    .buttonStyle(.plain)
                     .foregroundStyle(palette.secondaryText)
+                    .padding(.leading, usesTelegramComposer ? -8 : -10)
+                    .accessibilityLabel("取消录音")
 
                     HStack(alignment: .center, spacing: 3) {
                         ForEach(0..<18, id: \.self) { index in
