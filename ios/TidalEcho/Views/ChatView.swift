@@ -23,6 +23,8 @@ struct ChatView: View {
     @State private var seenPeekMessageIDs = Set<Int>()
     @State private var didPrimePeekAutopresentation = false
     @State private var editingMessage: ChatMessage?
+    /// 她把哪张倒计时的悬浮窗收起了（只收这一张，下一张照常浮出来）。
+    @State private var dismissedTimerMessageID: Int?
     @State private var pendingRegeneration: ChatMessage?
     @State private var pendingHide: ChatMessage?
     /// nil＝没在多选；否则是选中的消息 id。
@@ -48,6 +50,17 @@ struct ChatView: View {
     private var usesUpperTailAvatarLayout: Bool {
         model.showsAIAvatar && model.showsHumanAvatar && model.bubbleShapeStyle == .upperTail
     }
+    /// 最近一张还在跑的倒计时卡。早就过点、relay 又没来得及标 expired 的不算。
+    private var activeTimerMessage: ChatMessage? {
+        guard let message = model.messages.last(where: { $0.meta.timer?.status == "running" }),
+              message.id != dismissedTimerMessageID,
+              let timer = message.meta.timer else { return nil }
+        if let end = EchoDateCache.date(from: timer.endsAt), end < Date().addingTimeInterval(-600) {
+            return nil
+        }
+        return message
+    }
+
     private var historyEndsWithAIThinkingHeader: Bool {
         for row in chatRows.reversed() {
             guard row.message.author == .ai else { return false }
@@ -176,6 +189,29 @@ struct ChatView: View {
                 ClawdPetOverlay(model: model, bottomInset: composerHeight + 4)
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
                     .zIndex(10)
+            }
+
+            if let timerMessage = activeTimerMessage, let timer = timerMessage.meta.timer {
+                TimerFloatOverlay(
+                    timer: timer,
+                    palette: palette,
+                    topInset: 64,
+                    bottomInset: composerHeight + 4,
+                    onOpen: {
+                        model.navigationRequest = MessageNavigationRequest(messageID: timerMessage.id)
+                    },
+                    onDone: {
+                        Task {
+                            do { try await model.completeTimer(messageID: timerMessage.id) }
+                            catch { model.errorMessage = error.localizedDescription }
+                        }
+                    },
+                    onDismiss: {
+                        withAnimation(.easeOut(duration: 0.18)) { dismissedTimerMessageID = timerMessage.id }
+                    }
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                .zIndex(9)
             }
 
             if let invite = nativeCalls.ringingInvite,

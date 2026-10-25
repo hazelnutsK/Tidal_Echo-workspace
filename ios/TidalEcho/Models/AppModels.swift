@@ -136,6 +136,20 @@ struct MessageTimer: Codable, Hashable {
         case endsAt = "ends_at"
         case doneAt = "done_at"
     }
+
+    func secondsRemaining(at date: Date) -> Int {
+        guard let end = EchoDateCache.date(from: endsAt) else { return 0 }
+        return max(0, Int(end.timeIntervalSince(date).rounded()))
+    }
+
+    static func durationText(_ total: Int) -> String {
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
+            : String(format: "%d:%02d", minutes, seconds)
+    }
 }
 
 struct ToolStep: Decodable, Hashable {

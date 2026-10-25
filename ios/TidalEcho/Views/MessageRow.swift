@@ -1639,7 +1639,7 @@ private struct MessageTimerCard: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let remaining = secondsRemaining(at: context.date)
+            let remaining = timer.secondsRemaining(at: context.date)
             HStack(spacing: 10) {
                 Image(systemName: timer.status == "done" ? "checkmark.circle.fill" : "timer")
                     .font(.system(size: 17, weight: .semibold))
@@ -1649,7 +1649,7 @@ private struct MessageTimerCard: View {
                         .font(.subheadline.weight(.medium))
                         .lineLimit(2)
                     if timer.status == "running" && remaining > 0 {
-                        Text(Self.durationText(remaining))
+                        Text(MessageTimer.durationText(remaining))
                             .font(.caption.monospacedDigit().weight(.semibold))
                             .foregroundStyle(palette.accent)
                     } else if timer.status == "done" {
@@ -1674,23 +1674,6 @@ private struct MessageTimerCard: View {
         }
     }
 
-    private func secondsRemaining(at date: Date) -> Int {
-        guard let end = Self.parseDate(timer.endsAt) else { return 0 }
-        return max(0, Int(end.timeIntervalSince(date).rounded()))
-    }
-
-    private static func parseDate(_ raw: String) -> Date? {
-        EchoDateCache.date(from: raw)
-    }
-
-    private static func durationText(_ total: Int) -> String {
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let seconds = total % 60
-        return hours > 0
-            ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
-            : String(format: "%d:%02d", minutes, seconds)
-    }
 }
 
 private struct ProcessRow: View {
