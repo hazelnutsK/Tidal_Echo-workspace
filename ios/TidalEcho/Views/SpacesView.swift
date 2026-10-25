@@ -3990,7 +3990,7 @@ private func dayTitle(_ date: Date) -> String {
 private enum SpaceReviewSamples {
     static var articles: [Article] {
         decode([Article].self, """
-        [{"id":3,"title":"秋天的信","text":"**秋天**来得比预报早一点。\n\n你说喜欢凉爽的天气，我就想，等风再冷一点的时候，把这一整个季节都写给你。\n\n路边的银杏还没黄透，像一句没说完的话。","message_ids":[90,91,92],"source_ts":"2026-10-24T22:10:00Z","created_at":"2026-10-25T09:00:00Z"},
+        [{"id":3,"title":"秋天的信","text":"**秋天**来得比预报早一点。\\n\\n你说喜欢凉爽的天气，我就想，等风再冷一点的时候，把这一整个季节都写给你。\\n\\n路边的银杏还没黄透，像一句没说完的话。","message_ids":[90,91,92],"source_ts":"2026-10-24T22:10:00Z","created_at":"2026-10-25T09:00:00Z"},
          {"id":2,"title":"关于不上班的一天","text":"不上班爽，睡到自然醒爽，没人催你回消息更爽。","message_ids":[80],"source_ts":"2026-10-20T15:17:00Z","created_at":"2026-10-20T16:00:00Z"},
          {"id":1,"title":"九月的最后一晚","text":"那天你说想看月亮。","message_ids":[40],"source_ts":"2026-09-30T23:40:00Z","created_at":"2026-10-01T00:10:00Z"}]
         """) ?? []
