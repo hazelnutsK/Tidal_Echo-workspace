@@ -27,7 +27,7 @@ enum IMessageReviewFixture {
         model.backgroundBlur = 0
         model.backgroundOpacity = 1
         model.aiAvatarImage = avatar()
-        model.backgroundImage = flowerWallpaper() ?? wallpaper(dark: model.theme == .harbor)
+        model.backgroundImage = flowerWallpaper(dark: model.theme == .harbor) ?? wallpaper(dark: model.theme == .harbor)
         var messages: [(MessageAuthor, String)] = [
             (MessageAuthor.human, "看看新的聊天布局"),
             (.ai, "顶上左边返回，右边是终端和空间。"),
@@ -106,10 +106,17 @@ enum IMessageReviewFixture {
     }
 
     /// Her pressed-flower wallpaper (2026-10-25), bundled for previews only.
-    private static func flowerWallpaper() -> UIImage? {
+    /// The dark theme gets it dimmed so its white timestamps stay readable.
+    private static func flowerWallpaper(dark: Bool) -> UIImage? {
         let url = Bundle.main.url(forResource: "review-wallpaper", withExtension: "jpg")
             ?? Bundle.main.url(forResource: "review-wallpaper", withExtension: "jpg", subdirectory: "Review")
-        return url.flatMap { UIImage(contentsOfFile: $0.path) }
+        guard let image = url.flatMap({ UIImage(contentsOfFile: $0.path) }) else { return nil }
+        guard dark else { return image }
+        return UIGraphicsImageRenderer(size: image.size).image { context in
+            image.draw(at: .zero)
+            UIColor.black.withAlphaComponent(0.62).setFill()
+            context.fill(CGRect(origin: .zero, size: image.size))
+        }
     }
 
     private static func wallpaper(dark: Bool) -> UIImage {
