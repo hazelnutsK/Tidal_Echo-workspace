@@ -7384,6 +7384,8 @@ def unanswered_inbound():
         meta = json.loads(row["meta"] or "{}")
     except Exception:
         meta = {}
+    if meta.get("reply_deferred") is True:
+        return None    # 还压在 App 的待发车道里,没交到我手上,不算欠她(见 /app/send/bundle)
     if (meta.get("reactions") or {}).get("ai"):
         return None    # 只回了个表情也算开过口
     return row
