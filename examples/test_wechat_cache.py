@@ -64,7 +64,7 @@ class WechatCacheTests(unittest.TestCase):
             )),
         }
         tree = load_functions(ROOT / "backend/app.py", {
-            "_forward_to_loop_sync", "ai_delivery_text",
+            "_forward_to_loop_sync", "ai_delivery_text", "quote_line",
         }, self.relay)
         self.relay["INBOUND_VIAS"] = next(
             ast.literal_eval(n.value) for n in tree.body

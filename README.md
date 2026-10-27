@@ -7,7 +7,7 @@ AI 侧默认以 **Claude Code 的 channel 插件**形态运行——你在手机
 
 > 这是保留自用功能和近期 iOS 改动的开发版本。2026-10-15 起仓库公开，代码中保留部分个人称呼、示例文案、服务地址和 Windows 路径；真实密钥、聊天数据库、实际人设与附件不入 Git。部署时请配置自己的环境变量和前端 `CONFIG`。
 >
-> 日常开发和 iOS 编译都使用 `hazelnutsK/Tidal_Echo-workspace`。源码提交后，在此仓库的 Actions → **iOS Build** 中选择目标分支手动构建，不需要再同步到另一个公开仓库。见 [编译说明](docs/public-ios-build.md)。
+> 日常开发和 iOS 编译都使用 `hazelnutsK/Tidal_Echo-workspace`。完整源码统一在 **main**：本地和 VPS 从最新主线开工，完成后合回主线。见 [协作流程](docs/github-workflow.md) 和 [2026-10-27 归拢记录](docs/version-consolidation-2026-10-27.md)。需要打包时在本仓库 Actions → **iOS Build** 手动构建，默认选 main；见 [编译说明](docs/public-ios-build.md)。
 
 > 🤖 **打算把这个仓库交给 AI 帮你部署?**(没经验也能装)→ 先让它读 **[AGENTS.md](AGENTS.md)**:部署 SOP + 决策树 + 避雷点。
 > 🔀 **想用 Claude Code 以外的模型(GPT / DeepSeek / Gemini / GLM / …)?** → AI 侧改用 **[examples/bridge_any_llm.py](examples/bridge_any_llm.py)**,前后端不变。

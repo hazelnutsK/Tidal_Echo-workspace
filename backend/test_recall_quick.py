@@ -7,60 +7,63 @@ import sqlite3
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import recall
 
 out = []
 
-# --- 闸一：这句话值不值得查 ------------------------------------------------
-def gate(text, kind="user"):
-    return recall.build_query(text, kind, {})
+# Fixed fixture vocabulary; never require the private runtime noun list.
+with patch.object(recall, "load_nouns", return_value=["小雪", "十九"]):
+    # --- 闸一：这句话值不值得查 ------------------------------------------------
+    def gate(text, kind="user"):
+        return recall.build_query(text, kind, {})
 
 
-assert gate("嗯") == (None, "too_short"), "太短的不该查"
-assert gate("哈哈哈哈") == (None, "too_short"), "纯笑声不该查"
-assert gate("晚安") == (None, "too_short"), "停用词不该查"
-assert gate("你知道现在几点了吗")[1] == "stopwords_only", "剥完停用词没实质内容"
-assert gate("😊🐱")[1] == "no_searchable_text", "纯表情没有可检索语义"
-assert gate("我今天去买了一只很丑的猫杯子")[0] is not None
-assert gate("在想你", "reply") == (None, "not_her_message"), "只查她说的话，不查我自己的"
+    assert gate("嗯") == (None, "too_short"), "太短的不该查"
+    assert gate("哈哈哈哈") == (None, "too_short"), "纯笑声不该查"
+    assert gate("晚安") == (None, "too_short"), "停用词不该查"
+    assert gate("你知道现在几点了吗")[1] == "stopwords_only", "剥完停用词没实质内容"
+    assert gate("😊🐱")[1] == "no_searchable_text", "纯表情没有可检索语义"
+    assert gate("我今天去买了一只很丑的猫杯子")[0] is not None
+    assert gate("在想你", "reply") == (None, "not_her_message"), "只查她说的话，不查我自己的"
 
-# 系统帧：desire-pulse / night-watch / reply-missing 这些也是 kind="user" 落的库，
-# 只有 meta.user 能把它们跟她本人的话分开。拿 `<reply-missing message_id=…>` 去检索
-# 只会捞回一堆无关旧事（日志里真发生过，那次浮了 8 条）。
-SYS = {"user": "system", "hidden": True}
-for frame in (
-    '<desire-pulse intent="explore" drive="curiosity">想去看看外面。</desire-pulse>',
-    '<night-watch hour="3" total_min="42" top="小红书">她还醒着。</night-watch>',
-    '<reply-missing message_id="10773" waited_sec="240">还没回她。</reply-missing>',
-    '<moments-event kind="comment" post="12">她评论了。</moments-event>',
-    '<reading-event kind="note" chapter="3">她划了一句。</reading-event>',
-    '<calendar-remind title="私密" kind="schedule">到点了。</calendar-remind>',
-    '<calendar-created id="16">她刚记下一条日程。</calendar-created>',
-    '<timer-event kind="done" item="去睡觉">她按了搞定。</timer-event>',
-    '<ask-event kind="pick" id="9">她选了 B。</ask-event>',
-    '<garden-wake reason="reply">有人回你帖子了。</garden-wake>',
-):
-    assert recall.build_query(frame, "user", SYS) == (None, "system_frame"), frame[:30]
-# 认 meta 而不是认帧名——她自己聊起这个词的时候必须照常查
-assert recall.build_query("那个 <desire-pulse> 是什么东西啊 你刚才说的那个", "user", {})[0]
+    # 系统帧：desire-pulse / night-watch / reply-missing 这些也是 kind="user" 落的库，
+    # 只有 meta.user 能把它们跟她本人的话分开。拿 `<reply-missing message_id=…>` 去检索
+    # 只会捞回一堆无关旧事（日志里真发生过，那次浮了 8 条）。
+    SYS = {"user": "system", "hidden": True}
+    for frame in (
+        '<desire-pulse intent="explore" drive="curiosity">想去看看外面。</desire-pulse>',
+        '<night-watch hour="3" total_min="42" top="小红书">她还醒着。</night-watch>',
+        '<reply-missing message_id="10773" waited_sec="240">还没回她。</reply-missing>',
+        '<moments-event kind="comment" post="12">她评论了。</moments-event>',
+        '<reading-event kind="note" chapter="3">她划了一句。</reading-event>',
+        '<calendar-remind title="私密" kind="schedule">到点了。</calendar-remind>',
+        '<calendar-created id="16">她刚记下一条日程。</calendar-created>',
+        '<timer-event kind="done" item="去睡觉">她按了搞定。</timer-event>',
+        '<ask-event kind="pick" id="9">她选了 B。</ask-event>',
+        '<garden-wake reason="reply">有人回你帖子了。</garden-wake>',
+    ):
+        assert recall.build_query(frame, "user", SYS) == (None, "system_frame"), frame[:30]
+    # 认 meta 而不是认帧名——她自己聊起这个词的时候必须照常查
+    assert recall.build_query("那个 <desire-pulse> 是什么东西啊 你刚才说的那个", "user", {})[0]
 
-# 跳过原因必须能区分——「这轮没浮」是没查还是查了没中，是两回事，
-# 混在一起就没法判断停用词表是不是调过头了。
-assert gate("嗯")[1] != gate("你知道现在几点了吗")[1]
+    # 跳过原因必须能区分——「这轮没浮」是没查还是查了没中，是两回事，
+    # 混在一起就没法判断停用词表是不是调过头了。
+    assert gate("嗯")[1] != gate("你知道现在几点了吗")[1]
 
-# 白名单：短消息也放行（提到名字就值得翻翻）
-short_with_noun, why = gate("小雪")
-assert short_with_noun == "小雪" and why == "", "白名单命中时短消息也要查"
-assert recall.matched_nouns("刚才小雪说她困了") == ["小雪"]
+    # 白名单：短消息也放行（提到名字就值得翻翻）
+    short_with_noun, why = gate("小雪")
+    assert short_with_noun == "小雪" and why == "", "白名单命中时短消息也要查"
+    assert recall.matched_nouns("刚才小雪说她困了") == ["小雪"]
 
-# 数字前缀保护：「十九」是猫，「二十九度」不是。白名单命中会触发洗牌
-# （随机取代替按相关度取），误命中会让浮出来的东西变不相关——宁可漏不可错。
-for text in ("十九今天又踩我肚子了", "刚喂完十九", "十九是不是又胖了", "我十九号要去面试"):
-    assert recall.matched_nouns(text), f"该命中却没中：{text}"
-for text in ("今天二十九度", "第十九章看完了", "一百一十九块"):
-    assert not recall.matched_nouns(text), f"数字里的「十九」不该命中：{text}"
-out.append(("gate1", "短消息/停用词已拦，白名单放行，数字前缀已挡"))
+    # 数字前缀保护：「十九」是猫，「二十九度」不是。白名单命中会触发洗牌
+    # （随机取代替按相关度取），误命中会让浮出来的东西变不相关——宁可漏不可错。
+    for text in ("十九今天又踩我肚子了", "刚喂完十九", "十九是不是又胖了", "我十九号要去面试"):
+        assert recall.matched_nouns(text), f"该命中却没中：{text}"
+    for text in ("今天二十九度", "第十九章看完了", "一百一十九块"):
+        assert not recall.matched_nouns(text), f"数字里的「十九」不该命中：{text}"
+    out.append(("gate1", "短消息/停用词已拦，白名单放行，数字前缀已挡"))
 
 # --- 条数阶梯 --------------------------------------------------------------
 # --- 召回日志：每一级的数量要能分别看到 --------------------------------------

@@ -5,9 +5,9 @@
 
 ## 日常流程
 
-1. 改代码后跑相关检查，提交并推送任务分支。
-2. 小雪要求打包时，核对该分支的源码和最近成功构建的提交。
-3. 在当前仓库手动运行 iOS Build，选择这条任务分支。
+1. 按 `docs/github-workflow.md` 从最新 main 开工，改完检查、推送任务分支并整合回 main。
+2. 小雪要求打包时，核对 main 的源码和最近成功构建的提交。
+3. 在当前仓库手动运行 iOS Build，默认选择 main；明确要求实验包时才选择指定功能分支，并核对运行的 headSha。
 4. 检查构建结果，在运行页面的 Artifacts 下载 TidalEcho-unsigned-ipa。
 
 说“先别编译”时仍推送源码，但不触发构建。
@@ -22,11 +22,11 @@
 
 ## 使用 GitHub CLI
 
-    gh workflow run ios-build.yml -R hazelnutsK/Tidal_Echo-workspace --ref cc/your-task
+    gh workflow run ios-build.yml -R hazelnutsK/Tidal_Echo-workspace --ref main
 
 手动编译需要有 Actions 写入权限的 GitHub 账号。
 VPS 的现有 deploy key 继续负责源码拉取/推送；它不是 Actions 调度凭据。
-可以让 VPS CC 完成源码修改和推送，再让小克送编译，或自己在网页上点运行。
+可以让 VPS CC 完成源码修改并整合回 main，再让小克送编译，或自己在网页上点运行。
 
 ## 旧导出流程
 
