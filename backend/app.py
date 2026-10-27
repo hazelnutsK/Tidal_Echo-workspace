@@ -1071,6 +1071,17 @@ def paragraph_stream_id(stream_id: str, index: int) -> str:
     return f"{stream_id}:p{index}"
 
 
+def reply_is_atomic(meta: dict) -> bool:
+    """Cards, files and intended voice notes stay one message in every path.
+
+    Voice intent survives marker removal even if TTS cannot attach audio.
+    Images alone can still accompany a burst of ordinary text bubbles.
+    """
+    return any(meta.get(k) for k in (
+        "timer", "ask", "peek", "album", "voice_requested", "voice_failed",
+    )) or any((a or {}).get("kind") != "image" for a in (meta.get("attachments") or []))
+
+
 def paragraph_meta(stream_id: str, draft: dict, index: int, *, final: bool = False) -> dict:
     meta = dict(draft["meta"])
     meta["stream_id"] = paragraph_stream_id(stream_id, index)
@@ -1104,9 +1115,7 @@ async def handle_paragraph_stream(stream_id: str, draft: dict, done: bool) -> di
     raw = draft["text"]
     if not done:
         meta = draft["meta"]
-        atts = meta.get("attachments") or []
-        atomic = any(meta.get(k) for k in ("timer", "ask", "peek", "album")) or any(
-            a.get("kind") != "image" for a in atts)
+        atomic = reply_is_atomic(meta)
         by_sentence = draft["paragraph_settings"].get("short_split") == "sentence"
         parts, tail = ([], raw) if atomic else stream_parts(raw, by_sentence)
         for part in parts[len(saved):]:
@@ -1135,10 +1144,11 @@ async def handle_paragraph_stream(stream_id: str, draft: dict, done: bool) -> di
     text = strip_sysnote_leak(text, meta)
     text = await apply_voice_note(text, meta)
     atts = meta.get("attachments") or []
-    atomic = bool(VOICE_MARKER_RE.search(raw)) or any(meta.get(k) for k in ("timer", "ask", "peek", "album")) or any(
-        a.get("kind") != "image" for a in atts)
+    atomic = bool(VOICE_MARKER_RE.search(raw)) or reply_is_atomic(meta)
     if atomic:
-        parts = [text.strip()] if text.strip() or atts else []
+        # A marker-only card is a real message even after its text is stripped.
+        has_card = any(meta.get(k) for k in ("timer", "ask", "peek", "album"))
+        parts = [text.strip()] if text.strip() or atts or has_card else []
     else:
         parts = final_parts(text, draft["paragraph_settings"].get("short_split") == "sentence")
     # Remove the live tail explicitly, including silent replies and a final LF.
@@ -1570,6 +1580,7 @@ async def apply_voice_note(text: str, meta: dict) -> str:
     match = VOICE_MARKER_RE.search(text or "")
     if not match:
         return text
+    meta["voice_requested"] = True
     lang = (match.group(1) or "").lower() or None
     clean = VOICE_MARKER_RE.sub("", text).strip()
     # 位置标签 [左耳][脑后]… 跟语气标签一样只给声音用，气泡里不留
@@ -1865,14 +1876,9 @@ def split_reply_parts(text: str, meta: dict) -> list:
     state = ctx_state()
     if str(state.get("chat_mode") or "long") != "short":
         return [text]
-    atts = meta.get("attachments") or []
     # 图现在脱出气泡单独一张,后面的字照常分条(她 2026-09-04 定的)。
     # 语音条和文件仍然不拆——那张药丸/卡片跟正文是一体的。
-    only_photos = bool(atts) and all(
-        str((a or {}).get("kind") or "") == "image" for a in atts
-    )
-    if (meta.get("timer") or meta.get("ask") or meta.get("peek")
-            or meta.get("album") or (atts and not only_photos)):
+    if reply_is_atomic(meta):
         return [text]
     parts = [p.strip() for p in re.split(r"\n{2,}", text or "") if p.strip()]
     if str(state.get("short_split") or "") == "sentence":

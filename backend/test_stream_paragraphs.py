@@ -53,7 +53,7 @@ class ParagraphRelayTests(unittest.IsolatedAsyncioTestCase):
             self.ns[name] = lambda text, meta: text
         names = {"save_message", "handle_stream_delta", "prune_stream_drafts", "stream_resync_events",
                  "paragraph_stream_id", "paragraph_meta", "paragraph_text", "handle_paragraph_stream",
-                 "persist_thinking_draft"}
+                 "persist_thinking_draft", "reply_is_atomic"}
         source = Path(__file__).with_name("app.py")
         tree = ast.parse(source.read_text(encoding="utf-8"))
         nodes = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
