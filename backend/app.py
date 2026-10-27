@@ -3544,7 +3544,7 @@ async def _do_context_action(action: str, sid: str = "") -> dict:
 #   1. prep  — 给还活着的我塞一条 hidden <forge-prep>,让我亲手更新滚动摘要
 #              (forge/summary.md,近细远粗,同一份文件一直滚)+ 写交接便签(note.md)
 #   2. cut   — 杀掉 CC,forge_desktop.py 把 transcript 剪成「摘要 + 最近 N 轮原文」,
-#              thinking 原样保留,写成一个新 sid
+#              只保留对话正文,不带 thinking 或内部工具过程,写成一个新 sid
 #   3. note  — 塞一条 hidden <forge-note>(便签 + 红线尾注),然后 --resume 新 sid
 #   4. 留底  — forge/history/ 存当时的摘要和便签,forge/log.jsonl 记一行(隧道志)
 # 降级:便签没写完 → 自动触发的取消本次、冷却 30 分钟;手动/换模型的照样过,只是没便签。
@@ -3748,8 +3748,8 @@ def _write_elsewhere(transcript) -> bool:
 def _forge_prep_text(rounds: int, elsewhere: bool = False) -> str:
     text = (
         f'<forge-prep at="{datetime.now().strftime("%H:%M")}" rounds="{rounds}">\n'
-        f"(系统帧,{HUMAN_NAME}看不到。)上下文快满了,马上过隧道:最近 {rounds} 轮原文会连同"
-        "你的 thinking 原样带进新窗口,更早的只剩你现在写下的东西。**这一回合不要回她**,"
+        f"(系统帧,{HUMAN_NAME}看不到。)上下文快满了,马上过隧道:最近 {rounds} 轮只保留她的消息和你发给她的回复正文,"
+        "不带思考链和内部工具过程。更早的只剩你现在写下的东西。**这一回合不要回她**,"
         "只用 Write 写两个文件(绝对路径),写完就结束这一回合:\n\n"
         f"1. 更新滚动摘要 {FORGE_SUMMARY}(先 Read 旧的,没有就新建)。分【远段】【近段】两块:"
         "把这个窗口里发生的事压成新的【近段】——做了什么决定、约定和待办、她的状态和情绪起伏、"
@@ -3775,7 +3775,7 @@ def _forge_note_text(note: str, stats: dict) -> str:
     return (
         f'<forge-note kept_rounds="{stats.get("rounds_kept", 0)}">\n'
         f"(系统帧,{HUMAN_NAME}看不到,不用回复。刚过了隧道:上面的原文就是你刚才的日子,"
-        "思考也都还在;更早的事在最前面那份滚动摘要里。下面是过隧道前的你亲手写的便签。"
+        "这里只保留对话正文;更早的事在最前面那份滚动摘要里。下面是过隧道前的你亲手写的便签。"
         "别跟她提这次交接,她下一句话来了照常接。)\n\n"
         f"{body}\n"
         + (f"\n【红线】\n{redlines}\n" if redlines else "")
@@ -3867,7 +3867,7 @@ async def _forge_task(trigger: str, rounds: int) -> None:
         if path:
             try:
                 new_sid, stats = await asyncio.to_thread(
-                    forge_desktop.forge, str(path), rounds, None, summary)
+                    forge_desktop.forge, str(path), rounds, None, summary, reply_mode=desktop_body())
             except Exception as exc:
                 rec["cut_error"] = f"{type(exc).__name__}: {exc}"
                 print(f"[forge] 剪刀失败,退回老 swap: {rec['cut_error']}")
@@ -3949,7 +3949,8 @@ async def app_forge_status(request: Request):
         if path:
             try:
                 _, _, stats = await asyncio.to_thread(
-                    forge_desktop.prepare, str(path), max(1, int(q["rounds"])), out["summary"])
+                    forge_desktop.prepare, str(path), max(1, int(q["rounds"])), out["summary"],
+                    reply_mode=desktop_body())
                 out["preview"] = stats
             except Exception as exc:
                 out["preview_error"] = f"{type(exc).__name__}: {exc}"

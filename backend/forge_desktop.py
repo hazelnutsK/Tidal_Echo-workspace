@@ -6,19 +6,15 @@ forge_desktop.py — 桌面身体的"过隧道"剪刀(2026-09-23)。
 然后 `claude --resume <新sid>` 接上。思路来自 Vivi-Seth/forge-reload 和 TG 桥的
 Documents\\claude\\tg\\forge_reload.py,但按桌面这边的事实改过:
 
-  * 她的话 = user 事件、字符串内容、带 <channel source="companion" ... user="human">。
-    user="system" 的是 relay 塞的 hidden 帧(keepalive / desire-pulse / reading-event…)——
-    **保留在原文里**(那是我那会儿为什么突然去做某事的上下文),但**不能当切点**:
-    新的我醒来看到的第一幕必须是她说的话,不能是一条系统指令。
-  * thinking **保留**(TG 那份全删,因为当年的 thinking 是空壳+签名)。桌面这边的
-    thinking 有摘要正文,原样带回去,新的我知道当时自己在想什么。空 thinking 仍然丢。
-    message.id 不能删——CC 靠它把同一次回复拆开存的 thinking/text/tool_use 事件拼回去。
-  * <forge-prep> 那一轮(让我写便签和摘要的那一回合)整段剪掉:便签已经走交接帧了。
-  * 超长工具输出掐头留尾,图片换成一行占位。她的话、我的回复、thinking 一字不动。
+  * 最近 N 轮只携带她的 channel 消息和发给她的回复正文。
+    channel 身体从 companion reply 工具取正文;pbody 身体保留直接回复的 text。
+  * thinking / redacted_thinking、内部工具调用和结果、hidden 系统帧不进入新会话。
+  * <forge-prep> 那一轮整段剪掉;滚动摘要和便签仍由原有交接流程提供。
+  * 原会话不修改;新会话重建 UUID 链,图片保留路径提示。
 
 用法:
   python forge_desktop.py <源.jsonl> <保留轮数> --preview
-  python forge_desktop.py <源.jsonl> <保留轮数> [--summary 摘要.md] [--out DIR] [--strip-thinking]
+  python forge_desktop.py <源.jsonl> <保留轮数> [--summary 摘要.md] [--out DIR] [--body channel|pbody]
 
 成功时最后一行打印 NEW_SESSION_ID=<uuid>。非零退出 = 什么都没写。
 """
@@ -34,9 +30,7 @@ CHANNEL_MARK = '<channel source="companion"'
 HUMAN_MARK = 'user="human"'
 PREP_MARK = "<forge-prep"
 LEGACY_HANDOFF_MARK = "<forge-handoff>"
-REPLY_TOOL_SUFFIX = "__reply"
-TOOL_RESULT_CAP = 4000               # 超过就掐头 60% + 尾 25%
-IMAGE_PLACEHOLDER = "[图片:过隧道时省略了,原图还在本机]"
+REPLY_TOOL = "mcp__companion__reply"
 META_DENYLIST = ("sourceToolAssistantUUID", "toolUseResult", "leafUuid", "promptId",
                  "session_id", "origin", "promptSource", "queueSkipAttachments")
 
@@ -116,115 +110,69 @@ def cut_to_rounds(events, rounds):
     return events[0 if len(idx) <= rounds else idx[-rounds]:]
 
 
-# ---- 3. clean blocks ------------------------------------------------------------
-def _squash_text(s):
-    if len(s) <= TOOL_RESULT_CAP:
-        return s
-    head, tail = int(TOOL_RESULT_CAP * 0.6), int(TOOL_RESULT_CAP * 0.25)
-    return f"{s[:head]}\n…[过隧道时省略 {len(s) - head - tail} 字]…\n{s[-tail:]}"
+# ---- 3. keep visible dialogue --------------------------------------------------
+def dialogue_only(events, reply_mode="channel"):
+    """Project transcript protocol onto visible messages, without copying reasoning.
 
-
-def _clean_result(block, reply_ids):
-    if block.get("tool_use_id") in reply_ids:
-        return block
-    c = block.get("content")
-    nb = dict(block)
-    if isinstance(c, str):
-        nb["content"] = _squash_text(c)
-    elif isinstance(c, list):
-        parts = []
-        for p in c:
-            if isinstance(p, dict) and p.get("type") == "image":
-                parts.append({"type": "text", "text": IMAGE_PLACEHOLDER})
-            elif isinstance(p, dict) and p.get("type") == "text":
-                parts.append({**p, "text": _squash_text(p.get("text") or "")})
-            else:
-                parts.append(p)
-        nb["content"] = parts
-    return nb
-
-
-def clean_blocks(events, strip_thinking):
-    reply_ids = {
-        b.get("id") for e in events if e.get("type") == "assistant"
-        for b in (_content(e) or []) if isinstance(b, dict)
-        and b.get("type") == "tool_use" and str(b.get("name", "")).endswith(REPLY_TOOL_SUFFIX)
-    }
+    Keep a marker on projected assistant text so a later Forge preserves it too.
+    Channel terminal prose is private; pbody text is delivered as the reply.
+    """
+    if reply_mode not in ("channel", "pbody"):
+        raise ValueError("reply_mode must be channel|pbody")
+    failed = set()
+    for e in events:
+        c = _content(e)
+        for b in c if isinstance(c, list) else []:
+            if not isinstance(b, dict) or b.get("type") != "tool_result":
+                continue
+            # MCP errors may be wrapped inside the tool_result content as JSON.
+            error = bool(b.get("is_error"))
+            value = b.get("content")
+            candidates = [value] if isinstance(value, str) else [
+                x.get("text", "") for x in value or [] if isinstance(x, dict)]
+            for text in candidates:
+                try:
+                    parsed = json.loads(text)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(parsed, dict) and parsed.get("isError"):
+                    error = True
+            if error:
+                failed.add(b.get("tool_use_id"))
     stats = {"thinking_kept": 0, "thinking_dropped": 0, "images": 0}
     out = []
     for e in events:
         c = _content(e)
-        if not isinstance(c, list):
-            out.append(e)
+        if is_human(e):
+            out.append({**e, "message": {"role": "user", "content": c}})
+            continue
+        if e.get("type") != "assistant" or not isinstance(c, list):
             continue
         blocks = []
         for b in c:
             if not isinstance(b, dict):
-                blocks.append(b)
                 continue
             t = b.get("type")
             if t in ("thinking", "redacted_thinking"):
-                empty = t == "thinking" and not (b.get("thinking") or "").strip()
-                if strip_thinking or empty or not b.get("signature") and t == "thinking":
-                    stats["thinking_dropped"] += 1
-                    continue
-                stats["thinking_kept"] += 1
-            elif t == "image":
-                stats["images"] += 1
-                blocks.append({"type": "text", "text": IMAGE_PLACEHOLDER})
-                continue
-            elif t == "tool_result":
-                b = _clean_result(b, reply_ids)
-            blocks.append(b)
-        ne = dict(e)
-        ne["message"] = {**e.get("message", {}), "content": blocks}
-        out.append(ne)
-    return out, stats, reply_ids
-
-
-def repair_pairs(events):
-    uses, results = set(), set()
-    for e in events:
-        for b in _content(e) if isinstance(_content(e), list) else []:
-            if isinstance(b, dict) and b.get("type") == "tool_use":
-                uses.add(b.get("id"))
-            elif isinstance(b, dict) and b.get("type") == "tool_result":
-                results.add(b.get("tool_use_id"))
-    ok = uses & results
-    out = []
-    for e in events:
-        c = _content(e)
-        if isinstance(c, list):
-            c = [b for b in c if not (isinstance(b, dict) and (
-                (b.get("type") == "tool_use" and b.get("id") not in ok) or
-                (b.get("type") == "tool_result" and b.get("tool_use_id") not in ok)))]
-            if not c:
-                continue
-            e = {**e, "message": {**e["message"], "content": c}}
-        out.append(e)
-    return out
-
-
-def drop_thinking_only_replies(events):
-    """同一个 message.id 的事件是一次回复被拆开存的。如果一次回复剪到最后只剩
-    thinking(比如它的 tool_use 因为缺结果被剪了),整次回复都丢——只有思考没有
-    动作的 assistant 消息 API 不认。"""
-    def is_thinking(b):
-        return isinstance(b, dict) and b.get("type") in ("thinking", "redacted_thinking")
-    substantive = set()
-    for e in events:
-        if e.get("type") == "assistant":
-            mid = (e.get("message") or {}).get("id") or e.get("uuid")
-            if any(not is_thinking(b) for b in (_content(e) or [])):
-                substantive.add(mid)
-    out = []
-    for e in events:
-        if e.get("type") == "assistant":
-            mid = (e.get("message") or {}).get("id") or e.get("uuid")
-            if mid not in substantive:
-                continue
-        out.append(e)
-    return out
+                stats["thinking_dropped"] += 1
+            elif t == "text" and (reply_mode == "pbody" or e.get("forgeDialogue")):
+                text = b.get("text") or ""
+                if text.strip() and text.strip() != "[[silent]]":
+                    blocks.append({"type": "text", "text": text})
+            elif t == "tool_use" and b.get("name") == REPLY_TOOL and b.get("id") not in failed:
+                args = b.get("input") or {}
+                text = args.get("text") or ""
+                if isinstance(text, str) and text.strip():
+                    blocks.append({"type": "text", "text": text})
+                for path in args.get("images") or []:
+                    stats["images"] += 1
+                    blocks.append({"type": "text", "text": f"[图片: {path}]"})
+        if blocks:
+            old = e.get("message") or {}
+            msg = {k: old[k] for k in ("id", "model", "type") if k in old}
+            msg.update(role="assistant", content=blocks, stop_reason="end_turn")
+            out.append({**e, "forgeDialogue": True, "message": msg})
+    return out, stats
 
 
 # ---- 4. summary head + rebuild ---------------------------------------------------
@@ -238,7 +186,7 @@ def summary_event(template, text):
         "message": {"role": "user", "content": (
             "<forge-summary>\n"
             "(这不是她发来的消息。这是上一段的你在过隧道前亲手更新的滚动摘要——"
-            "下面紧接着的是那之后的对话原文,带着你当时的思考。读完直接接着过日子,"
+            "下面紧接着的是保留的对话正文,不含思考链和内部工具过程。读完直接接着过日子,"
             "一切照旧,别跟她提这份东西,除非她问起。)\n\n"
             f"{text.strip()}\n"
             "</forge-summary>")},
@@ -302,13 +250,15 @@ def _peek(e):
     return body[:60]
 
 
-def prepare(source, rounds, summary_text="", strip_thinking=False):
+def prepare(source, rounds, summary_text="", strip_thinking=True, *, reply_mode="channel"):
+    # Legacy strip_thinking argument is accepted; dialogue-only never carries it.
+    if rounds < 1:
+        raise ValueError("rounds must be >= 1")
     raw = load_events(source)
     conv = drop_prep_turns(keep_conversation(raw))
     humans_total = sum(1 for e in conv if is_human(e))
     cut = cut_to_rounds(conv, rounds)
-    cleaned, st, _ = clean_blocks(cut, strip_thinking)
-    body = drop_thinking_only_replies(repair_pairs(cleaned))
+    body, st = dialogue_only(cut, reply_mode)
     while body and not is_human(body[0]):
         body.pop(0)
     if not body:
@@ -333,7 +283,7 @@ def prepare(source, rounds, summary_text="", strip_thinking=False):
 def validate(events, sid, rounds):
     if not events or events[0].get("type") != "user":
         return False, "first event is not user"
-    seen, prev, uses, results, humans = set(), None, set(), set(), 0
+    seen, prev, humans = set(), None, 0
     for e in events:
         if e.get("sessionId") != sid:
             return False, "mixed sessionId"
@@ -345,13 +295,10 @@ def validate(events, sid, rounds):
         prev = e["uuid"]
         humans += is_human(e)
         c = _content(e)
-        for b in c if isinstance(c, list) else []:
-            if isinstance(b, dict) and b.get("type") == "tool_use":
-                uses.add(b.get("id"))
-            elif isinstance(b, dict) and b.get("type") == "tool_result":
-                results.add(b.get("tool_use_id"))
-    if uses != results:
-        return False, "unpaired tool blocks"
+        if isinstance(c, list) and any(
+            not isinstance(b, dict) or b.get("type") != "text" for b in c
+        ):
+            return False, "non-dialogue content block"
     if not 1 <= humans <= rounds:
         return False, f"kept {humans} human turns (asked {rounds})"
     return True, "ok"
@@ -375,9 +322,9 @@ def write_session(events, sid, out_dir, rounds):
     return final
 
 
-def forge(source, rounds, out_dir=None, summary_text="", strip_thinking=False):
+def forge(source, rounds, out_dir=None, summary_text="", strip_thinking=True, *, reply_mode="channel"):
     """给 relay 调用:成功返回 (new_sid, stats),失败抛异常且什么都没写。"""
-    sid, events, stats = prepare(source, rounds, summary_text, strip_thinking)
+    sid, events, stats = prepare(source, rounds, summary_text, strip_thinking, reply_mode=reply_mode)
     ok, why = validate(events, sid, rounds)
     if not ok:
         raise ValueError("structure invalid: " + why)
@@ -396,13 +343,14 @@ def main():
     ap.add_argument("--preview", action="store_true")
     ap.add_argument("--summary", default=None)
     ap.add_argument("--out", default=None)
-    ap.add_argument("--strip-thinking", action="store_true")
+    ap.add_argument("--strip-thinking", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--body", choices=("channel", "pbody"), default="channel")
     a = ap.parse_args()
     if a.rounds < 1:
         print("rounds must be >= 1", file=sys.stderr)
         return 2
     summary = open(a.summary, encoding="utf-8").read() if a.summary else ""
-    sid, events, stats = prepare(a.source, a.rounds, summary, a.strip_thinking)
+    sid, events, stats = prepare(a.source, a.rounds, summary, reply_mode=a.body)
     ok, why = validate(events, sid, a.rounds)
     print(json.dumps({**stats, "valid": ok, "why": why}, ensure_ascii=False, indent=2))
     if not ok:

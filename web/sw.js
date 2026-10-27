@@ -2,7 +2,7 @@
    IMPORTANT: bump CACHE on every front-end change, or installed clients keep the
    old shell (the precached index.html won't refresh until the SW reinstalls). */
 const AI_NAME = "小克";          // push-title fallback; keep in sync with index.html CONFIG.AI_NAME
-const CACHE = "companion-v184-openrouter-opus5-55";
+const CACHE = "companion-v185-context-threshold-1m";
 const PRECACHE = [
   "./index.html",
   "./manifest.webmanifest?v=175",
